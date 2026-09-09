@@ -3,11 +3,11 @@ package nl.kvt.soteria
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.browser.customtabs.CustomTabsIntent
 import nl.kvt.soteria.databinding.ActivityLoginBinding
+import org.json.JSONObject
 import java.util.concurrent.Executors
 
 class LoginActivity : AppCompatActivity() {
@@ -59,7 +59,8 @@ class LoginActivity : AppCompatActivity() {
         if (token.isBlank()) return
         Prefs.token = token
         io.execute {
-            val me = runCatching { ApiClient.post("me") }.getOrNull()
+            val attempt = runCatching { ApiClient.post("me") }
+            val me = attempt.getOrNull()
             if (me?.optBoolean("ok") == true) {
                 Prefs.displayName = me.optString("name")
                 Prefs.email = me.optString("email")
@@ -69,10 +70,32 @@ class LoginActivity : AppCompatActivity() {
                 }
             } else {
                 Prefs.clearSession()
-                runOnUiThread {
-                    Toast.makeText(this, "Inloggen mislukt", Toast.LENGTH_LONG).show()
-                }
+                val reason = failureReason(me, attempt.exceptionOrNull())
+                runOnUiThread { showLoginError(reason) }
             }
         }
+    }
+
+    private fun failureReason(response: JSONObject?, error: Throwable?): String {
+        val serverError = response?.optString("error").orEmpty().trim()
+        if (serverError.isNotBlank()) {
+            val status = response?.optInt("_http", 0) ?: 0
+            return if (status > 0) "$serverError (HTTP $status)" else serverError
+        }
+        if (error != null) {
+            val message = error.message.orEmpty().trim()
+            val type = error.javaClass.simpleName
+            return if (message.isBlank()) type else "$type: $message"
+        }
+        return getString(R.string.login_failed_unknown)
+    }
+
+    private fun showLoginError(reason: String) {
+        if (isFinishing || isDestroyed) return
+        AlertDialog.Builder(this)
+            .setTitle(R.string.login_failed)
+            .setMessage(getString(R.string.login_failed_detail, reason))
+            .setPositiveButton(R.string.close, null)
+            .show()
     }
 }

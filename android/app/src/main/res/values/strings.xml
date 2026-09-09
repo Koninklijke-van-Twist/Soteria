@@ -12,6 +12,10 @@
     <string name="invalid_server_url">Vul een geldige http(s)-URL in</string>
     <string name="server_saved">Server-URL opgeslagen</string>
     <string name="server_reset">Standaardserver hersteld</string>
+    <string name="login_failed">Inloggen mislukt</string>
+    <string name="login_failed_detail">De server accepteerde de login niet.\n\nDetails: %1$s</string>
+    <string name="login_failed_unknown">De server gaf geen reden op.</string>
+    <string name="close">Sluiten</string>
     <string name="bhv_call">BHV-oproep</string>
     <string name="call_to_assembly">Oproepen naar verzamelpunt</string>
     <string name="call_to_me">Oproepen naar mijn locatie</string>
