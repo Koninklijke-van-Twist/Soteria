@@ -14,8 +14,6 @@ $graphCredentials = [
     'clientSecret' => 'CLIENT_SECRET',
 ];
 
-$mapsApiKey = '';
-
 $mapDefaultCenter = [
     'lat' => 51.8708,
     'lng' => 4.6025,

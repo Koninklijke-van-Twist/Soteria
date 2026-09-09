@@ -19,6 +19,7 @@
     <string name="refresh">Vernieuwen</string>
     <string name="incoming_call">BHV-OPROEP</string>
     <string name="answer">Reageren</string>
+    <string name="open_in_google_maps">Open in Google Maps</string>
     <string name="update_available_title">Nieuwe versie</string>
     <string name="update_available_text">Soteria %1$d is beschikbaar om te downloaden</string>
     <string name="update_available_message">Er staat een nieuwere Soteria-versie (%1$d) op GitHub Releases. Tik op downloaden om de pagina te openen.</string>

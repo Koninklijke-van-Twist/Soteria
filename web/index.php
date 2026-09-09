@@ -6,7 +6,6 @@ require_once __DIR__ . '/lib.php';
 
 $admin = soteria_require_admin_session();
 $pdo = soteria_pdo();
-$mapsApiKey = trim((string) ($mapsApiKey ?? ''));
 $center = is_array($mapDefaultCenter ?? null) ? $mapDefaultCenter : ['lat' => 51.8708, 'lng' => 4.6025, 'zoom' => 16];
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
@@ -78,6 +77,7 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Soteria — verzamelpunten</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
     <style>
         :root { --bg: #f4f7fb; --panel: #fff; --text: #10233f; --muted: #5b6b82; --accent: #0b65c2; --danger: #b42318; --shadow: 0 16px 40px rgba(15, 35, 63, 0.08); }
         * { box-sizing: border-box; }
@@ -88,6 +88,7 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
         .layout { display: grid; grid-template-columns: 340px 1fr; min-height: calc(100vh - 72px); }
         aside { padding: 20px; border-right: 1px solid #d8e0eb; background: var(--panel); }
         #map { min-height: 480px; }
+        .leaflet-container { height: 100%; min-height: 480px; }
         .location { padding: 12px 0; border-bottom: 1px solid #d8e0eb; }
         .location strong { display: block; }
         button, .btn { border: 0; background: var(--accent); color: #fff; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
@@ -121,10 +122,10 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
         </aside>
         <div id="map"></div>
     </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script>
         const locations = <?= json_encode($locations, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
         const center = <?= json_encode($center, JSON_UNESCAPED_UNICODE) ?>;
-        const hasMapsKey = <?= $mapsApiKey !== '' ? 'true' : 'false' ?>;
 
         async function post(data) {
             const body = new URLSearchParams(data);
@@ -137,59 +138,58 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
             return name ? name.trim() : '';
         }
 
-        async function initMap() {
-            const map = new google.maps.Map(document.getElementById('map'), {
-                center: { lat: Number(center.lat), lng: Number(center.lng) },
-                zoom: Number(center.zoom || 16),
-                mapTypeControl: true
-            });
+        const map = L.map('map').setView([Number(center.lat), Number(center.lng)], Number(center.zoom || 16));
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(map);
 
-            const markers = [];
+        const bounds = [];
 
-            function addMarker(location) {
-                const marker = new google.maps.Marker({
-                    position: { lat: Number(location.lat), lng: Number(location.lng) },
-                    map,
-                    draggable: true,
-                    title: location.name
-                });
-                marker.addListener('click', async () => {
-                    const name = promptName(location.name);
-                    if (!name) return;
-                    await post({ action: 'update', id: String(location.id), name, lat: String(location.lat), lng: String(location.lng) });
-                    location.name = name;
-                    marker.setTitle(name);
-                    window.location.reload();
-                });
-                marker.addListener('dragend', async () => {
-                    const pos = marker.getPosition();
-                    await post({
-                        action: 'update',
-                        id: String(location.id),
-                        name: location.name,
-                        lat: String(pos.lat()),
-                        lng: String(pos.lng())
-                    });
-                });
-                markers.push(marker);
-            }
-
-            locations.forEach(addMarker);
-
-            map.addListener('click', async (event) => {
-                const name = promptName('');
+        function addMarker(location) {
+            const marker = L.marker([Number(location.lat), Number(location.lng)], { draggable: true, title: location.name })
+                .addTo(map)
+                .bindTooltip(location.name);
+            bounds.push([Number(location.lat), Number(location.lng)]);
+            marker.on('click', async (event) => {
+                L.DomEvent.stopPropagation(event);
+                const name = promptName(location.name);
                 if (!name) return;
-                const result = await post({
-                    action: 'create',
-                    name,
-                    lat: String(event.latLng.lat()),
-                    lng: String(event.latLng.lng())
+                await post({ action: 'update', id: String(location.id), name, lat: String(location.lat), lng: String(location.lng) });
+                window.location.reload();
+            });
+            marker.on('dragend', async () => {
+                const pos = marker.getLatLng();
+                await post({
+                    action: 'update',
+                    id: String(location.id),
+                    name: location.name,
+                    lat: String(pos.lat),
+                    lng: String(pos.lng)
                 });
-                if (result.ok) {
-                    window.location.reload();
-                }
             });
         }
+
+        locations.forEach(addMarker);
+        if (bounds.length > 1) {
+            map.fitBounds(bounds, { padding: [32, 32] });
+        } else if (bounds.length === 1) {
+            map.setView(bounds[0], Number(center.zoom || 16));
+        }
+
+        map.on('click', async (event) => {
+            const name = promptName('');
+            if (!name) return;
+            const result = await post({
+                action: 'create',
+                name,
+                lat: String(event.latlng.lat),
+                lng: String(event.latlng.lng)
+            });
+            if (result.ok) {
+                window.location.reload();
+            }
+        });
 
         document.querySelectorAll('[data-delete]').forEach((button) => {
             button.addEventListener('click', async () => {
@@ -198,15 +198,6 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
                 window.location.reload();
             });
         });
-
-        if (hasMapsKey) {
-            window.initMap = initMap;
-        } else {
-            document.getElementById('map').innerHTML = '<p style="padding:24px">Zet <code>$mapsApiKey</code> in <code>auth.php</code> om Google Maps te gebruiken. Je kunt daarna op de kaart klikken om verzamelpunten te plaatsen.</p>';
-        }
     </script>
-    <?php if ($mapsApiKey !== ''): ?>
-        <script src="https://maps.googleapis.com/maps/api/js?key=<?= htmlspecialchars($mapsApiKey, ENT_QUOTES, 'UTF-8') ?>&callback=initMap" async defer></script>
-    <?php endif; ?>
 </body>
 </html>

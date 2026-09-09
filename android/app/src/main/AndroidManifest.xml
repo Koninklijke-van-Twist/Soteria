@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -20,6 +21,15 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="google.navigation" />
+        </intent>
+        <package android:name="com.google.android.apps.maps" />
     </queries>
 
     <application
@@ -31,10 +41,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Soteria"
         android:usesCleartextTraffic="true">
-
-        <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="${mapsApiKey}" />
 
         <activity
             android:name=".MainActivity"

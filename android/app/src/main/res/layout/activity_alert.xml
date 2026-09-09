@@ -52,11 +52,19 @@
             android:textSize="22sp"
             android:textStyle="bold" />
 
-        <androidx.fragment.app.FragmentContainerView
+        <org.osmdroid.views.MapView
             android:id="@+id/map"
-            android:name="com.google.android.gms.maps.SupportMapFragment"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1" />
+
+        <Button
+            android:id="@+id/openMapsButton"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:layout_margin="16dp"
+            android:text="@string/open_in_google_maps"
+            android:textAllCaps="false"
+            android:textSize="16sp" />
     </LinearLayout>
 </FrameLayout>

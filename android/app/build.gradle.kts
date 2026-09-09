@@ -3,11 +3,6 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val mapsApiKey: String = listOf(
-    System.getenv("MAPS_API_KEY").orEmpty(),
-    (project.findProperty("MAPS_API_KEY") as String?).orEmpty()
-).firstOrNull { it.isNotBlank() }.orEmpty()
-
 val apiBaseUrl: String = listOf(
     System.getenv("SOTERIA_API_BASE_URL").orEmpty(),
     (project.findProperty("soteria.apiBaseUrl") as String?).orEmpty(),
@@ -25,7 +20,6 @@ android {
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionName = "1.0"
         buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl.trimEnd('/')}\"")
-        manifestPlaceholders["mapsApiKey"] = mapsApiKey
     }
 
     signingConfigs {
@@ -89,7 +83,7 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.browser:browser:1.8.0")
-    implementation("com.google.android.gms:play-services-maps:19.0.0")
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
 }
