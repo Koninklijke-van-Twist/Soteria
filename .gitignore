@@ -1,5 +1,7 @@
 web/auth.php
-web/cache/
+web/cache/*
+!web/cache/.gitkeep
+!web/cache/.htaccess
 web/data/*.sqlite
 web/data/*.sqlite-*
 web/data/.ht-*
