@@ -1,5 +1,6 @@
 package nl.kvt.soteria
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,7 +8,10 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 
 object AlertNotifications {
     const val SERVICE_CHANNEL = "soteria_service"
@@ -15,6 +19,7 @@ object AlertNotifications {
     const val SERVICE_ID = 1001
     const val ALERT_ID = 1002
     const val UPDATE_ID = 1003
+    const val CANCELLED_ID = 1004
     const val UPDATE_CHANNEL = "soteria_update"
 
     fun ensureChannels(context: Context) {
@@ -67,6 +72,7 @@ object AlertNotifications {
     }
 
     fun showIncoming(context: Context, alert: PendingAlert) {
+        if (!canPostNotifications(context)) return
         val intent = Intent(context, AlertActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("alert_id", alert.id)
@@ -98,6 +104,7 @@ object AlertNotifications {
     }
 
     fun showUpdate(context: Context, release: AppRelease) {
+        if (!canPostNotifications(context)) return
         ensureChannels(context)
         val open = PendingIntent.getActivity(
             context,
@@ -117,5 +124,32 @@ object AlertNotifications {
 
     fun cancelIncoming(context: Context) {
         context.getSystemService(NotificationManager::class.java).cancel(ALERT_ID)
+    }
+
+    fun showCancelled(context: Context, callerName: String) {
+        if (!canPostNotifications(context)) return
+        val open = PendingIntent.getActivity(
+            context,
+            CANCELLED_ID,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val text = context.getString(R.string.call_cancelled_by, callerName)
+        val notification = NotificationCompat.Builder(context, ALERT_CHANNEL)
+            .setSmallIcon(R.drawable.ic_shield)
+            .setContentTitle(context.getString(R.string.call_cancelled_title))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        context.getSystemService(NotificationManager::class.java).notify(CANCELLED_ID, notification)
+    }
+
+    private fun canPostNotifications(context: Context): Boolean {
+        return Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
     }
 }

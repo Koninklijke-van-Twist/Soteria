@@ -28,25 +28,44 @@ if ($action === 'me') {
 if ($action === 'heartbeat') {
     $lat = (float) ($body['lat'] ?? $_POST['lat'] ?? 0);
     $lng = (float) ($body['lng'] ?? $_POST['lng'] ?? 0);
-    if ($lat === 0.0 && $lng === 0.0) {
-        soteria_json(['ok' => false, 'error' => 'Locatie ontbreekt.'], 400);
+    soteria_upsert_user($pdo, $email, $displayName);
+    if ($lat !== 0.0 || $lng !== 0.0) {
+        $update = $pdo->prepare(
+            'UPDATE users SET last_lat = :lat, last_lng = :lng, last_seen = :seen, updated_at = :seen WHERE email = :email'
+        );
+        $update->execute([
+            ':lat' => $lat,
+            ':lng' => $lng,
+            ':seen' => time(),
+            ':email' => $email,
+        ]);
     }
 
-    soteria_upsert_user($pdo, $email, $displayName);
-    $update = $pdo->prepare(
-        'UPDATE users SET last_lat = :lat, last_lng = :lng, last_seen = :seen, updated_at = :seen WHERE email = :email'
-    );
-    $update->execute([
-        ':lat' => $lat,
-        ':lng' => $lng,
-        ':seen' => time(),
-        ':email' => $email,
-    ]);
+    $currentAlertId = (int) ($body['current_alert_id'] ?? 0);
+    $cancelledAlert = null;
+    if ($currentAlertId > 0) {
+        $cancelled = $pdo->prepare(
+            'SELECT a.id, a.caller_name
+             FROM alerts a
+             INNER JOIN alert_recipients r ON r.alert_id = a.id AND r.email = :email
+             WHERE a.id = :id AND a.active = 0 AND a.cancelled_at IS NOT NULL
+             LIMIT 1'
+        );
+        $cancelled->execute([':email' => $email, ':id' => $currentAlertId]);
+        $row = $cancelled->fetch(PDO::FETCH_ASSOC);
+        if (is_array($row)) {
+            $cancelledAlert = [
+                'id' => (int) $row['id'],
+                'caller_name' => (string) $row['caller_name'],
+            ];
+        }
+    }
 
     soteria_json([
         'ok' => true,
         'locations' => soteria_locations_with_presence($pdo),
         'pending_alert' => soteria_pending_alert($pdo, $email),
+        'cancelled_alert' => $cancelledAlert,
     ]);
 }
 
@@ -70,6 +89,18 @@ if ($action === 'ack_alert') {
         soteria_json(['ok' => false, 'error' => 'Ongeldige oproep.'], 400);
     }
 
+    $recipient = $pdo->prepare(
+        'SELECT 1
+         FROM alert_recipients r
+         INNER JOIN alerts a ON a.id = r.alert_id
+         WHERE r.alert_id = :alert_id AND r.email = :email AND a.active = 1
+         LIMIT 1'
+    );
+    $recipient->execute([':alert_id' => $alertId, ':email' => $email]);
+    if ($recipient->fetchColumn() === false) {
+        soteria_json(['ok' => false, 'error' => 'Actieve oproep niet gevonden.'], 404);
+    }
+
     $ack = $pdo->prepare(
         'INSERT INTO alert_acks (alert_id, email, acked_at)
          VALUES (:alert_id, :email, :acked_at)
@@ -84,6 +115,44 @@ if ($action === 'ack_alert') {
     soteria_json(['ok' => true]);
 }
 
+if ($action === 'active_outgoing_alert') {
+    $alert = soteria_active_outgoing_alert($pdo, $email);
+    soteria_json([
+        'ok' => true,
+        'alert' => $alert === null ? null : soteria_alert_status($pdo, (int) $alert['id'], $email),
+    ]);
+}
+
+if ($action === 'alert_status') {
+    $alertId = (int) ($body['alert_id'] ?? 0);
+    $alert = $alertId > 0 ? soteria_alert_status($pdo, $alertId, $email) : null;
+    if ($alert === null) {
+        soteria_json(['ok' => false, 'error' => 'Oproep niet gevonden.'], 404);
+    }
+    soteria_json(['ok' => true, 'alert' => $alert]);
+}
+
+if ($action === 'cancel_alert') {
+    $alertId = (int) ($body['alert_id'] ?? 0);
+    if ($alertId <= 0) {
+        soteria_json(['ok' => false, 'error' => 'Ongeldige oproep.'], 400);
+    }
+    $cancel = $pdo->prepare(
+        'UPDATE alerts
+         SET active = 0, cancelled_at = :cancelled_at
+         WHERE id = :id AND caller_email = :email AND active = 1'
+    );
+    $cancel->execute([
+        ':cancelled_at' => time(),
+        ':id' => $alertId,
+        ':email' => $email,
+    ]);
+    if ($cancel->rowCount() < 1) {
+        soteria_json(['ok' => false, 'error' => 'Actieve oproep niet gevonden.'], 404);
+    }
+    soteria_json(['ok' => true]);
+}
+
 if ($action === 'create_alert') {
     $type = trim((string) ($body['type'] ?? ''));
     $lat = (float) ($body['lat'] ?? 0);
@@ -95,6 +164,15 @@ if ($action === 'create_alert') {
     if ($lat === 0.0 && $lng === 0.0) {
         $lat = (float) ($user['last_lat'] ?? 0);
         $lng = (float) ($user['last_lng'] ?? 0);
+    }
+
+    $existing = soteria_active_outgoing_alert($pdo, $email);
+    if ($existing !== null) {
+        soteria_json([
+            'ok' => true,
+            'alert_id' => (int) $existing['id'],
+            'existing' => true,
+        ]);
     }
     if ($lat === 0.0 && $lng === 0.0) {
         soteria_json(['ok' => false, 'error' => 'Je locatie is nodig voor een oproep.'], 400);

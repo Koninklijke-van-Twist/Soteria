@@ -42,6 +42,7 @@ class LoginActivity : AppCompatActivity() {
             if (release.versionCode <= Prefs.lastPromptedRemoteVersion) return@execute
             Prefs.lastPromptedRemoteVersion = release.versionCode
             runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 AlertDialog.Builder(this)
                     .setTitle(R.string.update_available_title)
                     .setMessage(getString(R.string.update_available_message, release.versionCode))
@@ -65,6 +66,7 @@ class LoginActivity : AppCompatActivity() {
                 Prefs.displayName = me.optString("name")
                 Prefs.email = me.optString("email")
                 runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     startActivity(Intent(this, MainActivity::class.java))
                     finish()
                 }
@@ -97,5 +99,10 @@ class LoginActivity : AppCompatActivity() {
             .setMessage(getString(R.string.login_failed_detail, reason))
             .setPositiveButton(R.string.close, null)
             .show()
+    }
+
+    override fun onDestroy() {
+        io.shutdownNow()
+        super.onDestroy()
     }
 }

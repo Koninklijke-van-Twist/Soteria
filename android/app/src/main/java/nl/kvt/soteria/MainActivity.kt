@@ -26,8 +26,14 @@ class MainActivity : AppCompatActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
-        requestBackgroundLocationIfNeeded()
-        startService()
+        continueAfterForegroundPermissions()
+    }
+
+    private val backgroundLocationLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        startServiceSafely()
+        askForBatteryOptimizationException()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,14 +67,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         requestPermissions()
-        ignoreBatteryOptimizations()
     }
 
     override fun onResume() {
         super.onResume()
         if (Prefs.isLoggedIn) {
-            startService()
+            startServiceSafely()
             refresh()
+            resumeOutgoingAlert()
             checkForUpdates()
         }
     }
@@ -85,23 +91,56 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
         if (missing.isEmpty()) {
-            requestBackgroundLocationIfNeeded()
-            startService()
+            continueAfterForegroundPermissions()
         } else {
-            permissionLauncher.launch(needed.toTypedArray())
+            permissionLauncher.launch(missing.toTypedArray())
         }
     }
 
-    private fun requestBackgroundLocationIfNeeded() {
+    private fun continueAfterForegroundPermissions() {
+        if (!hasLocationPermission()) {
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION))
+            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
+                backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                return
+            }
+            startServiceSafely()
+            if (!explainBackgroundLocationOnce()) {
+                askForBatteryOptimizationException()
+            }
+        } else {
+            startServiceSafely()
+            askForBatteryOptimizationException()
         }
     }
 
-    private fun ignoreBatteryOptimizations() {
+    private fun explainBackgroundLocationOnce(): Boolean {
+        if (Prefs.askedBackgroundLocation) return false
+        Prefs.askedBackgroundLocation = true
+        AlertDialog.Builder(this)
+            .setTitle(R.string.background_location_title)
+            .setMessage(R.string.background_location_explanation)
+            .setPositiveButton(R.string.open_app_settings) { _, _ ->
+                runCatching {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:$packageName")
+                        )
+                    )
+                }
+            }
+            .setNegativeButton(R.string.later) { _, _ -> askForBatteryOptimizationException() }
+            .show()
+        return true
+    }
+
+    private fun askForBatteryOptimizationException() {
         if (Prefs.askedBattery) return
         val pm = getSystemService(PowerManager::class.java)
         if (!pm.isIgnoringBatteryOptimizations(packageName)) {
@@ -116,19 +155,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun startService() {
-        ContextCompat.startForegroundService(this, Intent(this, SoteriaService::class.java))
+    private fun hasLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun startServiceSafely() {
+        if (!hasLocationPermission()) return
+        runCatching {
+            ContextCompat.startForegroundService(this, Intent(this, SoteriaService::class.java))
+        }
     }
 
     private fun refresh() {
         io.execute {
             val json = runCatching { ApiClient.post("locations") }.getOrNull()
             if (json == null) {
-                runOnUiThread { Toast.makeText(this, "Kon locaties niet laden", Toast.LENGTH_SHORT).show() }
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        Toast.makeText(this, "Kon locaties niet laden", Toast.LENGTH_SHORT).show()
+                    }
+                }
                 return@execute
             }
             if (json.optInt("_http") == 401) {
                 runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     startActivity(Intent(this, LoginActivity::class.java))
                     finish()
                 }
@@ -136,6 +190,7 @@ class MainActivity : AppCompatActivity() {
             }
             locations = ApiClient.parseLocations(json)
             runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 val labels = locations.map { "${it.name}: ${it.presentCount} BHV'er(s)" }
                 binding.locationList.adapter = ArrayAdapter(
                     this,
@@ -151,7 +206,9 @@ class MainActivity : AppCompatActivity() {
             val release = runCatching { UpdateChecker.check() }.getOrNull() ?: return@execute
             if (release.versionCode <= Prefs.lastPromptedRemoteVersion) return@execute
             Prefs.lastPromptedRemoteVersion = release.versionCode
-            runOnUiThread { showUpdateDialog(release) }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) showUpdateDialog(release)
+            }
         }
     }
 
@@ -168,14 +225,44 @@ class MainActivity : AppCompatActivity() {
         io.execute {
             val json = runCatching { ApiClient.post("create_alert", mapOf("type" to type)) }.getOrNull()
             runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (json == null || json.optBoolean("ok") != true) {
                     Toast.makeText(this, json?.optString("error") ?: "Oproep mislukt", Toast.LENGTH_LONG).show()
                 } else {
                     val count = json.optInt("recipient_count")
-                    Toast.makeText(this, "Oproep verstuurd naar $count BHV'er(s)", Toast.LENGTH_LONG).show()
+                    if (!json.optBoolean("existing")) {
+                        Toast.makeText(this, "Oproep verstuurd naar $count BHV'er(s)", Toast.LENGTH_LONG).show()
+                    }
                     binding.choicePanel.visibility = View.GONE
+                    openCallerAlert(json.optInt("alert_id"))
                 }
             }
         }
+    }
+
+    private fun resumeOutgoingAlert() {
+        io.execute {
+            val json = runCatching { ApiClient.post("active_outgoing_alert") }.getOrNull()
+                ?: return@execute
+            val alertId = json.optJSONObject("alert")?.optInt("id", 0) ?: 0
+            if (alertId > 0) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) openCallerAlert(alertId)
+                }
+            }
+        }
+    }
+
+    private fun openCallerAlert(alertId: Int) {
+        if (alertId <= 0) return
+        startActivity(
+            Intent(this, CallerAlertActivity::class.java)
+                .putExtra(CallerAlertActivity.EXTRA_ALERT_ID, alertId)
+        )
+    }
+
+    override fun onDestroy() {
+        io.shutdownNow()
+        super.onDestroy()
     }
 }

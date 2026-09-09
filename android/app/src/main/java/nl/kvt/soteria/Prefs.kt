@@ -48,6 +48,10 @@ object Prefs {
         get() = prefs.getBoolean("asked_battery", false)
         set(value) { prefs.edit().putBoolean("asked_battery", value).apply() }
 
+    var askedBackgroundLocation: Boolean
+        get() = prefs.getBoolean("asked_background_location", false)
+        set(value) { prefs.edit().putBoolean("asked_background_location", value).apply() }
+
     var lastUpdateCheckAt: Long
         get() = prefs.getLong("last_update_check_at", 0L)
         set(value) { prefs.edit().putLong("last_update_check_at", value).apply() }
@@ -72,7 +76,21 @@ object Prefs {
         get() = prefs.getInt("last_prompted_remote_version", 0)
         set(value) { prefs.edit().putInt("last_prompted_remote_version", value).apply() }
 
+    var currentRespondingAlertId: Int
+        get() = prefs.getInt("current_responding_alert_id", 0)
+        set(value) { prefs.edit().putInt("current_responding_alert_id", value).apply() }
+
+    var acknowledgedAlertId: Int
+        get() = prefs.getInt("acknowledged_alert_id", 0)
+        set(value) { prefs.edit().putInt("acknowledged_alert_id", value).apply() }
+
     fun clearSession() {
-        prefs.edit().remove("token").remove("display_name").remove("email").apply()
+        prefs.edit()
+            .remove("token")
+            .remove("display_name")
+            .remove("email")
+            .remove("current_responding_alert_id")
+            .remove("acknowledged_alert_id")
+            .apply()
     }
 }

@@ -75,6 +75,11 @@
             android:exported="false" />
 
         <activity
+            android:name=".CallerAlertActivity"
+            android:exported="false"
+            android:launchMode="singleTask" />
+
+        <activity
             android:name=".AlertActivity"
             android:excludeFromRecents="true"
             android:exported="false"

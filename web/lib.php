@@ -79,9 +79,11 @@ function soteria_pdo(): PDO
             dest_lng REAL NOT NULL,
             location_id INTEGER,
             created_at INTEGER NOT NULL,
-            active INTEGER NOT NULL DEFAULT 1
+            active INTEGER NOT NULL DEFAULT 1,
+            cancelled_at INTEGER
         )'
     );
+    soteria_add_column_if_missing($pdo, 'alerts', 'cancelled_at', 'INTEGER');
     $pdo->exec(
         'CREATE TABLE IF NOT EXISTS alert_recipients (
             alert_id INTEGER NOT NULL,
@@ -99,6 +101,14 @@ function soteria_pdo(): PDO
     );
 
     return $pdo;
+}
+
+function soteria_add_column_if_missing(PDO $pdo, string $table, string $column, string $definition): void
+{
+    $columns = $pdo->query("SELECT name FROM pragma_table_info('$table')")->fetchAll(PDO::FETCH_COLUMN);
+    if (is_array($columns) && !in_array($column, $columns, true)) {
+        $pdo->exec("ALTER TABLE $table ADD COLUMN $column $definition");
+    }
 }
 
 /**
@@ -416,10 +426,12 @@ function soteria_pending_alert(PDO $pdo, string $email): ?array
         return null;
     }
 
-    $destination = ((string) ($row['type'] ?? '') === 'assembly')
-        ? 'het verzamelpunt'
-        : 'zijn locatie';
+    $isAssembly = (string) ($row['type'] ?? '') === 'assembly';
+    $destination = $isAssembly ? 'het verzamelpunt' : 'de locatie van de oproeper';
     $destLabel = trim((string) ($row['dest_name'] ?? $destination));
+    $messageDestination = $isAssembly
+        ? 'verzamelpunt ' . $destLabel
+        : 'zijn/haar huidige locatie';
 
     return [
         'id' => (int) $row['id'],
@@ -429,7 +441,86 @@ function soteria_pending_alert(PDO $pdo, string $email): ?array
         'dest_lat' => (float) $row['dest_lat'],
         'dest_lng' => (float) $row['dest_lng'],
         'created_at' => (int) $row['created_at'],
-        'message' => (string) $row['caller_name'] . ' heeft je opgeroepen naar ' . $destination,
+        'message' => (string) $row['caller_name'] . ' roept je op naar ' . $messageDestination,
+    ];
+}
+
+function soteria_active_outgoing_alert(PDO $pdo, string $email): ?array
+{
+    $statement = $pdo->prepare(
+        'SELECT id, caller_name, type, dest_name, dest_lat, dest_lng, created_at
+         FROM alerts
+         WHERE caller_email = :email AND active = 1
+         ORDER BY created_at DESC
+         LIMIT 1'
+    );
+    $statement->execute([':email' => strtolower(trim($email))]);
+    $row = $statement->fetch(PDO::FETCH_ASSOC);
+    return is_array($row) ? $row : null;
+}
+
+function soteria_alert_status(PDO $pdo, int $alertId, string $callerEmail): ?array
+{
+    $statement = $pdo->prepare(
+        'SELECT id, caller_email, caller_name, type, dest_name, dest_lat, dest_lng,
+                created_at, active, cancelled_at
+         FROM alerts
+         WHERE id = :id AND caller_email = :caller_email
+         LIMIT 1'
+    );
+    $statement->execute([
+        ':id' => $alertId,
+        ':caller_email' => strtolower(trim($callerEmail)),
+    ]);
+    $alert = $statement->fetch(PDO::FETCH_ASSOC);
+    if (!is_array($alert)) {
+        return null;
+    }
+
+    $caller = $pdo->prepare('SELECT last_lat, last_lng FROM users WHERE email = :email LIMIT 1');
+    $caller->execute([':email' => strtolower(trim($callerEmail))]);
+    $callerPosition = $caller->fetch(PDO::FETCH_ASSOC);
+    $callerLat = (float) ($callerPosition['last_lat'] ?? $alert['dest_lat'] ?? 0);
+    $callerLng = (float) ($callerPosition['last_lng'] ?? $alert['dest_lng'] ?? 0);
+
+    $recipients = $pdo->prepare(
+        'SELECT r.email, u.display_name, u.last_lat, u.last_lng, u.last_seen, k.acked_at
+         FROM alert_recipients r
+         LEFT JOIN users u ON u.email = r.email
+         LEFT JOIN alert_acks k ON k.alert_id = r.alert_id AND k.email = r.email
+         WHERE r.alert_id = :alert_id
+         ORDER BY COALESCE(u.display_name, r.email) COLLATE NOCASE'
+    );
+    $recipients->execute([':alert_id' => $alertId]);
+    $people = [];
+    foreach ($recipients->fetchAll(PDO::FETCH_ASSOC) as $recipient) {
+        $lat = isset($recipient['last_lat']) ? (float) $recipient['last_lat'] : null;
+        $lng = isset($recipient['last_lng']) ? (float) $recipient['last_lng'] : null;
+        $distance = null;
+        if ($lat !== null && $lng !== null && ($callerLat !== 0.0 || $callerLng !== 0.0)) {
+            $distance = (int) round(soteria_haversine_meters($callerLat, $callerLng, $lat, $lng));
+        }
+        $people[] = [
+            'email' => (string) $recipient['email'],
+            'name' => trim((string) ($recipient['display_name'] ?? '')) ?: (string) $recipient['email'],
+            'responded' => $recipient['acked_at'] !== null,
+            'responded_at' => $recipient['acked_at'] !== null ? (int) $recipient['acked_at'] : null,
+            'distance_meters' => $distance,
+            'last_seen' => isset($recipient['last_seen']) ? (int) $recipient['last_seen'] : null,
+        ];
+    }
+
+    return [
+        'id' => (int) $alert['id'],
+        'caller_name' => (string) $alert['caller_name'],
+        'type' => (string) $alert['type'],
+        'dest_name' => (string) $alert['dest_name'],
+        'dest_lat' => (float) $alert['dest_lat'],
+        'dest_lng' => (float) $alert['dest_lng'],
+        'created_at' => (int) $alert['created_at'],
+        'active' => (bool) $alert['active'],
+        'cancelled_at' => $alert['cancelled_at'] !== null ? (int) $alert['cancelled_at'] : null,
+        'recipients' => $people,
     ];
 }
 

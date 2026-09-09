@@ -14,6 +14,9 @@ import android.os.VibratorManager
 import androidx.core.content.ContextCompat
 
 object Ringer {
+    const val ACTION_ALERT_CANCELLED = "nl.kvt.soteria.ALERT_CANCELLED"
+    const val EXTRA_ALERT_ID = "alert_id"
+
     @Volatile
     var activeAlert: PendingAlert? = null
 
@@ -22,10 +25,11 @@ object Ringer {
 
     fun start(context: Context, alert: PendingAlert) {
         activeAlert = alert
+        Prefs.currentRespondingAlertId = alert.id
         val app = context.applicationContext
         acquireWakeLock(app)
-        startSound(app)
-        vibrate(app)
+        runCatching { startSound(app) }
+        runCatching { vibrate(app) }
         AlertNotifications.showIncoming(app, alert)
         val intent = Intent(app, AlertActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -36,14 +40,14 @@ object Ringer {
             putExtra("dest_lng", alert.destLng)
             putExtra("ringing", true)
         }
-        app.startActivity(intent)
+        runCatching { app.startActivity(intent) }
     }
 
     fun stop(context: Context) {
-        player?.run {
-            runCatching { stop() }
-            reset()
-            release()
+        player?.let { mediaPlayer ->
+            runCatching { mediaPlayer.stop() }
+            runCatching { mediaPlayer.reset() }
+            runCatching { mediaPlayer.release() }
         }
         player = null
         wakeLock?.let { lock ->
@@ -53,30 +57,53 @@ object Ringer {
         AlertNotifications.cancelIncoming(context.applicationContext)
     }
 
+    fun cancelAlert(context: Context, alertId: Int) {
+        stop(context)
+        stopVibration(context)
+        activeAlert = null
+        if (Prefs.currentRespondingAlertId == alertId) {
+            Prefs.currentRespondingAlertId = 0
+        }
+        if (Prefs.acknowledgedAlertId == alertId) {
+            Prefs.acknowledgedAlertId = 0
+        }
+        context.applicationContext.sendBroadcast(
+            Intent(ACTION_ALERT_CANCELLED)
+                .setPackage(context.packageName)
+                .putExtra(EXTRA_ALERT_ID, alertId)
+        )
+    }
+
     private fun startSound(context: Context) {
         if (player != null) return
         val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            ?: return
         val mediaPlayer = MediaPlayer()
-        mediaPlayer.setAudioAttributes(
-            AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build()
-        )
-        mediaPlayer.isLooping = true
-        mediaPlayer.setDataSource(context, uri)
-        mediaPlayer.prepare()
-        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        runCatching {
-            audio.setStreamVolume(
-                AudioManager.STREAM_ALARM,
-                audio.getStreamMaxVolume(AudioManager.STREAM_ALARM),
-                0
+        try {
+            mediaPlayer.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
             )
+            mediaPlayer.isLooping = true
+            mediaPlayer.setDataSource(context, uri)
+            mediaPlayer.prepare()
+            val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            runCatching {
+                audio.setStreamVolume(
+                    AudioManager.STREAM_ALARM,
+                    audio.getStreamMaxVolume(AudioManager.STREAM_ALARM),
+                    0
+                )
+            }
+            mediaPlayer.start()
+            player = mediaPlayer
+        } catch (error: Exception) {
+            runCatching { mediaPlayer.release() }
+            throw error
         }
-        mediaPlayer.start()
-        player = mediaPlayer
     }
 
     private fun acquireWakeLock(context: Context) {
@@ -93,26 +120,26 @@ object Ringer {
 
     private fun vibrate(context: Context) {
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val manager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-            manager.defaultVibrator
+            val manager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            manager?.defaultVibrator
         } else {
             @Suppress("DEPRECATION")
-            context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
         val pattern = longArrayOf(0, 800, 400, 800, 400)
-        vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0))
+        vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0))
     }
 
     fun stopVibration(context: Context) {
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val manager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-            manager.defaultVibrator
+            val manager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            manager?.defaultVibrator
         } else {
             @Suppress("DEPRECATION")
-            context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
-        vibrator.cancel()
+        vibrator?.cancel()
     }
 
-    fun isRinging(): Boolean = player?.isPlaying == true
+    fun isRinging(): Boolean = runCatching { player?.isPlaying == true }.getOrDefault(false)
 }

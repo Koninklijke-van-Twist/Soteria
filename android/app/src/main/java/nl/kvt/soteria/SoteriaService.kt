@@ -47,15 +47,21 @@ class SoteriaService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             else -> 0
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceCompat.startForeground(
-                this,
-                AlertNotifications.SERVICE_ID,
-                notification,
-                fgsType
-            )
-        } else {
-            startForeground(AlertNotifications.SERVICE_ID, notification)
+        val foregroundStarted = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceCompat.startForeground(
+                    this,
+                    AlertNotifications.SERVICE_ID,
+                    notification,
+                    fgsType
+                )
+            } else {
+                startForeground(AlertNotifications.SERVICE_ID, notification)
+            }
+        }.isSuccess
+        if (!foregroundStarted) {
+            stopSelf()
+            return
         }
         startLocationUpdates()
         pollTask = executor.scheduleWithFixedDelay({ tick() }, 0, 5, TimeUnit.SECONDS)
@@ -75,9 +81,11 @@ class SoteriaService : Service() {
     }
 
     private fun startLocationUpdates() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
+        val fine = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        val coarse = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!fine && !coarse) {
             return
         }
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 15_000L)
@@ -98,14 +106,29 @@ class SoteriaService : Service() {
                 UpdateChecker.notifyIfNeeded(this, release)
             }
         }
-        if (lastLat == 0.0 && lastLng == 0.0) {
-            return
-        }
         runCatching {
+            val acknowledgedAlertId = Prefs.acknowledgedAlertId
+            if (acknowledgedAlertId > 0) {
+                ApiClient.post("ack_alert", mapOf("alert_id" to acknowledgedAlertId))
+            }
             val json = ApiClient.post(
                 "heartbeat",
-                mapOf("lat" to lastLat, "lng" to lastLng)
+                mapOf(
+                    "lat" to lastLat,
+                    "lng" to lastLng,
+                    "current_alert_id" to Prefs.currentRespondingAlertId
+                )
             )
+            val cancelled = json.optJSONObject("cancelled_alert")
+            if (cancelled != null) {
+                val cancelledId = cancelled.optInt("id")
+                Ringer.cancelAlert(this, cancelledId)
+                AlertNotifications.showCancelled(
+                    this,
+                    cancelled.optString("caller_name").ifBlank { getString(R.string.unknown_caller) }
+                )
+                if (ringingAlertId == cancelledId) ringingAlertId = null
+            }
             val alert = ApiClient.parseAlert(json)
             if (alert != null && ringingAlertId != alert.id) {
                 ringingAlertId = alert.id
