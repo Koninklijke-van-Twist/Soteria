@@ -65,6 +65,30 @@ jobs:
           bye
           EOF
 
+      # mirror slaat .htaccess over (de server heeft een eigen root-.htaccess),
+      # dus de afscherming van data/ en cache/ gaat apart mee.
+      - name: Upload .htaccess protection for data/ and cache/
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR }}
+        run: |
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "$FTP_HOST" << EOF
+          set cmd:fail-exit true
+          set net:max-retries 1
+          set net:timeout 20
+          set ftp:ssl-allow false
+          set ftp:passive-mode yes
+
+          cd "$FTP_REMOTE_DIR"
+          put ./web/data/.htaccess -o data/.htaccess
+          put ./web/cache/.htaccess -o cache/.htaccess
+          chmod 644 data/.htaccess
+          chmod 644 cache/.htaccess
+          bye
+          EOF
+
   android:
     runs-on: ubuntu-latest
     steps:

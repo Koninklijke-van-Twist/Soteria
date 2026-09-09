@@ -12,7 +12,7 @@ if ($action === '') {
     soteria_json(['ok' => false, 'error' => 'Geen actie opgegeven.'], 400);
 }
 
-$user = soteria_require_api_user($pdo);
+$user = soteria_require_api_user($pdo, $body);
 $email = strtolower(trim((string) ($user['email'] ?? '')));
 $displayName = (string) ($user['display_name'] ?? soteria_display_name_for_email($email));
 

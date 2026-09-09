@@ -5,7 +5,9 @@ require_once __DIR__ . '/auth.php';
 const SOTERIA_PRESENCE_METERS = 1000;
 const SOTERIA_PRESENCE_TTL_SECONDS = 180;
 const SOTERIA_TOKEN_TTL_SECONDS = 2592000; // 30 dagen
-const SOTERIA_DB_PATH = __DIR__ . '/data/soteria.sqlite';
+// Apache blokkeert ^\.ht standaard, ook zonder werkende .htaccess in data/.
+const SOTERIA_DB_PATH = __DIR__ . '/data/.ht-soteria.sqlite';
+const SOTERIA_LEGACY_DB_PATH = __DIR__ . '/data/soteria.sqlite';
 
 function soteria_json(array $payload, int $status = 200): never
 {
@@ -33,6 +35,8 @@ function soteria_pdo(): PDO
         throw new RuntimeException('Data-directory kon niet worden aangemaakt.');
     }
 
+    soteria_migrate_legacy_database();
+
     $pdo = new PDO('sqlite:' . SOTERIA_DB_PATH);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->exec('PRAGMA foreign_keys = ON');
@@ -46,9 +50,10 @@ function soteria_pdo(): PDO
             updated_at INTEGER NOT NULL
         )'
     );
+    soteria_migrate_tokens_to_hashed($pdo);
     $pdo->exec(
         'CREATE TABLE IF NOT EXISTS tokens (
-            token TEXT PRIMARY KEY,
+            token_hash TEXT PRIMARY KEY,
             email TEXT NOT NULL,
             expires_at INTEGER NOT NULL,
             created_at INTEGER NOT NULL
@@ -94,6 +99,47 @@ function soteria_pdo(): PDO
     );
 
     return $pdo;
+}
+
+/**
+ * Verplaatst een database die nog op de oude, publiek benaderbare naam staat.
+ */
+function soteria_migrate_legacy_database(): void
+{
+    if (is_file(SOTERIA_DB_PATH) || !is_file(SOTERIA_LEGACY_DB_PATH)) {
+        return;
+    }
+
+    if (!@rename(SOTERIA_LEGACY_DB_PATH, SOTERIA_DB_PATH)) {
+        return;
+    }
+
+    foreach (['-wal', '-shm'] as $suffix) {
+        $legacySidecar = SOTERIA_LEGACY_DB_PATH . $suffix;
+        if (is_file($legacySidecar)) {
+            @unlink($legacySidecar);
+        }
+    }
+}
+
+/**
+ * Tokens worden alleen als hash bewaard; oudere tabellen met platte tokens vervallen.
+ */
+function soteria_migrate_tokens_to_hashed(PDO $pdo): void
+{
+    $columns = $pdo->query("SELECT name FROM pragma_table_info('tokens')")->fetchAll(PDO::FETCH_COLUMN);
+    if (!is_array($columns) || $columns === []) {
+        return;
+    }
+
+    if (!in_array('token_hash', $columns, true)) {
+        $pdo->exec('DROP TABLE tokens');
+    }
+}
+
+function soteria_hash_token(string $token): string
+{
+    return hash('sha256', $token);
 }
 
 function soteria_haversine_meters(float $lat1, float $lng1, float $lat2, float $lng2): float
@@ -166,11 +212,11 @@ function soteria_issue_token(PDO $pdo, string $email): string
     $token = bin2hex(random_bytes(32));
     $now = time();
     $statement = $pdo->prepare(
-        'INSERT INTO tokens (token, email, expires_at, created_at)
-         VALUES (:token, :email, :expires_at, :created_at)'
+        'INSERT INTO tokens (token_hash, email, expires_at, created_at)
+         VALUES (:token_hash, :email, :expires_at, :created_at)'
     );
     $statement->execute([
-        ':token' => $token,
+        ':token_hash' => soteria_hash_token($token),
         ':email' => $email,
         ':expires_at' => $now + SOTERIA_TOKEN_TTL_SECONDS,
         ':created_at' => $now,
@@ -179,30 +225,54 @@ function soteria_issue_token(PDO $pdo, string $email): string
     return $token;
 }
 
-function soteria_bearer_token(): string
+/**
+ * Apache geeft de Authorization-header niet altijd door, dus ook body/query accepteren.
+ */
+function soteria_bearer_token(array $body = []): string
 {
-    $header = trim((string) ($_SERVER['HTTP_AUTHORIZATION'] ?? ''));
-    if (preg_match('/^Bearer\s+(.+)$/i', $header, $matches)) {
-        return trim($matches[1]);
+    $headers = [
+        (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? ''),
+        (string) ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? ''),
+    ];
+
+    if (function_exists('getallheaders')) {
+        foreach (getallheaders() as $name => $value) {
+            if (strcasecmp((string) $name, 'Authorization') === 0) {
+                $headers[] = (string) $value;
+            }
+        }
     }
-    return trim((string) ($_GET['token'] ?? $_POST['token'] ?? ''));
+
+    foreach ($headers as $header) {
+        if (preg_match('/^Bearer\s+(.+)$/i', trim($header), $matches)) {
+            return trim($matches[1]);
+        }
+    }
+
+    $bodyToken = trim((string) ($body['token'] ?? ''));
+    if ($bodyToken !== '') {
+        return $bodyToken;
+    }
+
+    return trim((string) ($_POST['token'] ?? $_GET['token'] ?? ''));
 }
 
-function soteria_require_api_user(PDO $pdo): array
+function soteria_require_api_user(PDO $pdo, array $body = []): array
 {
-    $token = soteria_bearer_token();
+    $token = soteria_bearer_token($body);
     if ($token === '') {
         soteria_json(['ok' => false, 'error' => 'Niet ingelogd.'], 401);
     }
 
+    $tokenHash = soteria_hash_token($token);
     $statement = $pdo->prepare(
-        'SELECT t.token, t.email, t.expires_at, u.display_name, u.last_lat, u.last_lng, u.last_seen
+        'SELECT t.email, t.expires_at, u.display_name, u.last_lat, u.last_lng, u.last_seen
          FROM tokens t
          LEFT JOIN users u ON u.email = t.email
-         WHERE t.token = :token
+         WHERE t.token_hash = :token_hash
          LIMIT 1'
     );
-    $statement->execute([':token' => $token]);
+    $statement->execute([':token_hash' => $tokenHash]);
     $row = $statement->fetch(PDO::FETCH_ASSOC);
     if (!is_array($row)) {
         soteria_json(['ok' => false, 'error' => 'Sessie ongeldig.'], 401);
@@ -212,10 +282,10 @@ function soteria_require_api_user(PDO $pdo): array
         soteria_json(['ok' => false, 'error' => 'Sessie verlopen.'], 401);
     }
 
-    $touch = $pdo->prepare('UPDATE tokens SET expires_at = :expires_at WHERE token = :token');
+    $touch = $pdo->prepare('UPDATE tokens SET expires_at = :expires_at WHERE token_hash = :token_hash');
     $touch->execute([
         ':expires_at' => time() + SOTERIA_TOKEN_TTL_SECONDS,
-        ':token' => $token,
+        ':token_hash' => $tokenHash,
     ]);
 
     return $row;

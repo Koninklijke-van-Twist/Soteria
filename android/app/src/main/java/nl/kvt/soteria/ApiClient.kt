@@ -8,6 +8,7 @@ object ApiClient {
     fun post(action: String, extra: Map<String, Any?> = emptyMap()): JSONObject {
         val payload = JSONObject()
         payload.put("action", action)
+        payload.put("token", Prefs.token)
         extra.forEach { (key, value) ->
             if (value != null) payload.put(key, value)
         }
