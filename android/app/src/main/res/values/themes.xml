@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Soteria" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorPrimaryContainer">@color/accent</item>
+        <item name="android:statusBarColor">@color/accent</item>
+    </style>
+
+    <style name="Theme.Soteria.Alert" parent="Theme.Soteria">
+        <item name="android:windowShowWallpaper">false</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>

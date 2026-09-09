@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Soteria</string>
+    <string name="login">Inloggen met Entra</string>
+    <string name="login_hint">Log in via de backend. Daarna blijft de app minstens een maand ingelogd, en elk gebruik verlengt dat.</string>
+    <string name="settings">Instellingen</string>
+    <string name="server_url">Server-URL</string>
+    <string name="server_url_help">Standaard verbindt de app met de KVT-omgeving. Andere organisaties kunnen hier hun eigen Soteria-server invullen.</string>
+    <string name="default_server_hint">Standaard: %1$s</string>
+    <string name="save">Opslaan</string>
+    <string name="reset_default_server">Terug naar standaardserver</string>
+    <string name="invalid_server_url">Vul een geldige http(s)-URL in</string>
+    <string name="server_saved">Server-URL opgeslagen</string>
+    <string name="server_reset">Standaardserver hersteld</string>
+    <string name="bhv_call">BHV-oproep</string>
+    <string name="call_to_assembly">Oproepen naar verzamelpunt</string>
+    <string name="call_to_me">Oproepen naar mijn locatie</string>
+    <string name="locations">Verzamelpunten</string>
+    <string name="refresh">Vernieuwen</string>
+    <string name="incoming_call">BHV-OPROEP</string>
+    <string name="answer">Reageren</string>
+    <string name="update_available_title">Nieuwe versie</string>
+    <string name="update_available_text">Soteria %1$d is beschikbaar om te downloaden</string>
+    <string name="update_available_message">Er staat een nieuwere Soteria-versie (%1$d) op GitHub Releases. Tik op downloaden om de pagina te openen.</string>
+    <string name="update_open">Downloaden</string>
+    <string name="update_later">Later</string>
+</resources>

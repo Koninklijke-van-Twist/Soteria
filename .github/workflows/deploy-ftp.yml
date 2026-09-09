@@ -1,0 +1,111 @@
+name: Deploy to FTP and release APK
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install lftp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lftp
+
+      - name: Debug env
+        run: |
+          echo "Host: $FTP_HOST"
+          echo "User: $FTP_USERNAME"
+          echo "Remote dir: $FTP_REMOTE_DIR"
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR }}
+
+      - name: Deploy web/ to FTP
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR }}
+        run: |
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "$FTP_HOST" << EOF
+          set cmd:fail-exit true
+          set net:max-retries 1
+          set net:timeout 20
+          set ftp:ssl-allow false
+          set ftp:passive-mode yes
+
+          cd "$FTP_REMOTE_DIR"
+
+          mirror -R --delete \
+            --exclude-glob .htaccess \
+            --exclude-glob cache/** \
+            --exclude-glob data/** \
+            --exclude-glob analytics/*.sqlite \
+            --exclude-glob analytics/*.sqlite-* \
+            --exclude-glob auth.php \
+            ./web .
+
+          set cmd:fail-exit false
+          mkdir cache
+          mkdir data
+          chmod 777 analytics
+          chmod 777 cache
+          chmod 777 data
+          bye
+          EOF
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Decode keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/soteria.jks"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/soteria.jks" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build release APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+          SOTERIA_API_BASE_URL: ${{ secrets.SOTERIA_API_BASE_URL }}
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: Soteria ${{ github.run_number }}
+          body: versionCode=${{ github.run_number }}
+          files: android/app/build/outputs/apk/release/app-release.apk
+          fail_on_unmatched_files: true

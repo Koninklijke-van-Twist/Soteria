@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="@color/bg">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="@color/text"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/userName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="@color/muted"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/callButton"
+            android:layout_width="match_parent"
+            android:layout_height="88dp"
+            android:layout_marginTop="20dp"
+            android:backgroundTint="@color/danger"
+            android:text="@string/bhv_call"
+            android:textAllCaps="false"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/choicePanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/callToAssembly"
+                android:layout_width="match_parent"
+                android:layout_height="96dp"
+                android:backgroundTint="@color/danger"
+                android:text="@string/call_to_assembly"
+                android:textAllCaps="false"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/callToMe"
+                android:layout_width="match_parent"
+                android:layout_height="96dp"
+                android:layout_marginTop="10dp"
+                android:backgroundTint="#8A1C14"
+                android:text="@string/call_to_me"
+                android:textAllCaps="false"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/locations"
+                android:textColor="@color/text"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/refreshButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/refresh"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <ListView
+            android:id="@+id/locationList"
+            android:layout_width="match_parent"
+            android:layout_height="320dp"
+            android:layout_marginTop="8dp"
+            android:background="@android:color/white"
+            android:divider="#d8e0eb"
+            android:dividerHeight="1dp" />
+    </LinearLayout>
+</ScrollView>
