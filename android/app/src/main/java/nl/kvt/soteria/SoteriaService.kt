@@ -38,6 +38,14 @@ class SoteriaService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        val fine = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        val coarse = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!fine && !coarse) {
+            stopSelf()
+            return
+        }
         AlertNotifications.ensureChannels(this)
         val notification = AlertNotifications.serviceNotification(this)
         val fgsType = when {

@@ -17,8 +17,14 @@ class BootReceiver : BroadcastReceiver() {
             PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
+        val hasBackgroundLocation =
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
         // Android 15 staat niet toe dat een locatie-FGS vanuit BOOT_COMPLETED start.
-        if (!hasLocation || Build.VERSION.SDK_INT >= 35) return
+        // Android 14 vereist bij zo'n achtergrondstart bovendien achtergrondlocatie.
+        if (!hasLocation || Build.VERSION.SDK_INT >= 35 ||
+            (Build.VERSION.SDK_INT >= 34 && !hasBackgroundLocation)
+        ) return
         runCatching {
             ContextCompat.startForegroundService(context, Intent(context, SoteriaService::class.java))
         }

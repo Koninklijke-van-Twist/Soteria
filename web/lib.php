@@ -496,8 +496,12 @@ function soteria_alert_status(PDO $pdo, int $alertId, string $callerEmail): ?arr
     foreach ($recipients->fetchAll(PDO::FETCH_ASSOC) as $recipient) {
         $lat = isset($recipient['last_lat']) ? (float) $recipient['last_lat'] : null;
         $lng = isset($recipient['last_lng']) ? (float) $recipient['last_lng'] : null;
+        $lastSeen = isset($recipient['last_seen']) ? (int) $recipient['last_seen'] : null;
         $distance = null;
-        if ($lat !== null && $lng !== null && ($callerLat !== 0.0 || $callerLng !== 0.0)) {
+        if ($lat !== null && $lng !== null &&
+            $lastSeen !== null && $lastSeen >= time() - SOTERIA_PRESENCE_TTL_SECONDS &&
+            ($callerLat !== 0.0 || $callerLng !== 0.0)
+        ) {
             $distance = (int) round(soteria_haversine_meters($callerLat, $callerLng, $lat, $lng));
         }
         $people[] = [
@@ -506,7 +510,7 @@ function soteria_alert_status(PDO $pdo, int $alertId, string $callerEmail): ?arr
             'responded' => $recipient['acked_at'] !== null,
             'responded_at' => $recipient['acked_at'] !== null ? (int) $recipient['acked_at'] : null,
             'distance_meters' => $distance,
-            'last_seen' => isset($recipient['last_seen']) ? (int) $recipient['last_seen'] : null,
+            'last_seen' => $lastSeen,
         ];
     }
 

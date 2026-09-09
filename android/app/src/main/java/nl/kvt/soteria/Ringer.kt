@@ -23,6 +23,7 @@ object Ringer {
     private var player: MediaPlayer? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
+    @Synchronized
     fun start(context: Context, alert: PendingAlert) {
         activeAlert = alert
         Prefs.currentRespondingAlertId = alert.id
@@ -43,6 +44,7 @@ object Ringer {
         runCatching { app.startActivity(intent) }
     }
 
+    @Synchronized
     fun stop(context: Context) {
         player?.let { mediaPlayer ->
             runCatching { mediaPlayer.stop() }
@@ -57,6 +59,7 @@ object Ringer {
         AlertNotifications.cancelIncoming(context.applicationContext)
     }
 
+    @Synchronized
     fun cancelAlert(context: Context, alertId: Int) {
         stop(context)
         stopVibration(context)
@@ -141,5 +144,6 @@ object Ringer {
         vibrator?.cancel()
     }
 
+    @Synchronized
     fun isRinging(): Boolean = runCatching { player?.isPlaying == true }.getOrDefault(false)
 }

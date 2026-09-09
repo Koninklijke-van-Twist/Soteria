@@ -88,18 +88,22 @@ object AlertNotifications {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val notification = NotificationCompat.Builder(context, ALERT_CHANNEL)
+        val builder = NotificationCompat.Builder(context, ALERT_CHANNEL)
             .setSmallIcon(R.drawable.ic_shield)
             .setContentTitle("BHV-oproep")
             .setContentText("Tik om de oproep te openen")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setFullScreenIntent(fullScreen, true)
             .setContentIntent(fullScreen)
             .setOngoing(true)
             .setAutoCancel(false)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .build()
+        val canUseFullScreen = Build.VERSION.SDK_INT < 34 ||
+            context.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
+        if (canUseFullScreen) {
+            builder.setFullScreenIntent(fullScreen, true)
+        }
+        val notification = builder.build()
         context.getSystemService(NotificationManager::class.java).notify(ALERT_ID, notification)
     }
 
