@@ -55,6 +55,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         exit;
     }
 
+    if ($action === 'people') {
+        echo json_encode(
+            ['ok' => true, 'people' => soteria_present_people($pdo)],
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        );
+        exit;
+    }
+
     if ($action === 'delete') {
         $id = (int) ($_POST['id'] ?? 0);
         $statement = $pdo->prepare('DELETE FROM locations WHERE id = :id');
@@ -69,6 +77,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 }
 
 $locations = soteria_locations_with_presence($pdo);
+$people = soteria_present_people($pdo);
 $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
 ?>
 <!DOCTYPE html>
@@ -94,6 +103,9 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
         button, .btn { border: 0; background: var(--accent); color: #fff; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
         button.danger { background: var(--danger); }
         .hint { font-size: 14px; line-height: 1.45; }
+        .responder-pin { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(15, 35, 63, 0.35); color: #fff; font: 700 16px/18px Arial, Helvetica, sans-serif; text-align: center; }
+        .legend { display: flex; align-items: center; gap: 8px; margin-top: 16px; font-size: 14px; }
+        .legend .responder-pin { flex: 0 0 auto; }
         @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } #map { min-height: 360px; } }
     </style>
 </head>
@@ -108,6 +120,10 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
     <div class="layout">
         <aside>
             <p class="hint">Klik op de kaart om een verzamelpunt te plaatsen. Sleep een pin om te verplaatsen.</p>
+            <div class="legend">
+                <span class="responder-pin">+</span>
+                <span class="muted" id="peopleCount"></span>
+            </div>
             <div id="list">
                 <?php foreach ($locations as $location): ?>
                     <div class="location" data-id="<?= (int) $location['id'] ?>">
@@ -124,8 +140,16 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
     </div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script>
-        const locations = <?= json_encode($locations, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
-        const center = <?= json_encode($center, JSON_UNESCAPED_UNICODE) ?>;
+        <?php // JSON_HEX_TAG houdt een naam met bijvoorbeeld </script> binnen de string. ?>
+        const locations = <?= json_encode($locations, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) ?>;
+        const center = <?= json_encode($center, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+        const initialPeople = <?= json_encode($people, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) ?>;
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[char]);
+        }
 
         async function post(data) {
             const body = new URLSearchParams(data);
@@ -149,7 +173,7 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
         function addMarker(location) {
             const marker = L.marker([Number(location.lat), Number(location.lng)], { draggable: true, title: location.name })
                 .addTo(map)
-                .bindTooltip(location.name);
+                .bindTooltip(escapeHtml(location.name));
             bounds.push([Number(location.lat), Number(location.lng)]);
             marker.on('click', async (event) => {
                 L.DomEvent.stopPropagation(event);
@@ -176,6 +200,40 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
         } else if (bounds.length === 1) {
             map.setView(bounds[0], Number(center.zoom || 16));
         }
+
+        const responderIcon = L.divIcon({
+            className: '',
+            html: '<div class="responder-pin">+</div>',
+            iconSize: [22, 22],
+            iconAnchor: [11, 11],
+            tooltipAnchor: [0, -12]
+        });
+        const responderLayer = L.layerGroup().addTo(map);
+        const peopleCount = document.getElementById('peopleCount');
+
+        function renderPeople(people) {
+            responderLayer.clearLayers();
+            people.forEach((person) => {
+                if (!Number.isFinite(person.lat) || !Number.isFinite(person.lng)) return;
+                L.marker([person.lat, person.lng], { icon: responderIcon, zIndexOffset: 500 })
+                    .bindTooltip(escapeHtml(person.name), { direction: 'top' })
+                    .addTo(responderLayer);
+            });
+            peopleCount.textContent = people.length === 1
+                ? '1 BHV\'er online — hover voor de naam'
+                : people.length + ' BHV\'ers online — hover voor de naam';
+        }
+
+        renderPeople(initialPeople);
+        // Aanwezigheid vervalt na 3 minuten zonder heartbeat, dus de kaart ververst zichzelf.
+        setInterval(async () => {
+            try {
+                const result = await post({ action: 'people' });
+                if (result.ok) renderPeople(result.people);
+            } catch (error) {
+                /* volgende ronde opnieuw */
+            }
+        }, 30000);
 
         map.on('click', async (event) => {
             const name = promptName('');

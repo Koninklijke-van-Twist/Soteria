@@ -310,6 +310,31 @@ function soteria_present_users(PDO $pdo): array
     return is_array($rows) ? $rows : [];
 }
 
+/**
+ * Actieve BHV'ers met een bekende positie, klaar om als JSON naar de kaart te gaan.
+ */
+function soteria_present_people(PDO $pdo): array
+{
+    $people = [];
+    foreach (soteria_present_users($pdo) as $user) {
+        $email = strtolower(trim((string) ($user['email'] ?? '')));
+        $name = trim((string) ($user['display_name'] ?? ''));
+        $people[] = [
+            'email' => $email,
+            'name' => $name !== '' ? $name : $email,
+            'lat' => (float) ($user['last_lat'] ?? 0),
+            'lng' => (float) ($user['last_lng'] ?? 0),
+            'last_seen' => (int) ($user['last_seen'] ?? 0),
+        ];
+    }
+
+    usort($people, static function (array $a, array $b): int {
+        return strcasecmp((string) $a['name'], (string) $b['name']);
+    });
+
+    return $people;
+}
+
 function soteria_user_is_present_at(array $user, array $location): bool
 {
     $lat = (float) ($user['last_lat'] ?? 0);
