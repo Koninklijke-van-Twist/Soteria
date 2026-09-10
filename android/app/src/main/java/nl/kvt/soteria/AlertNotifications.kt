@@ -15,7 +15,8 @@ import android.content.pm.PackageManager
 
 object AlertNotifications {
     const val SERVICE_CHANNEL = "soteria_service"
-    const val ALERT_CHANNEL = "soteria_alert"
+    // Nieuwe ID: kanaalinstellingen zijn na creatie onveranderlijk op Android.
+    const val ALERT_CHANNEL = "soteria_alert_v2"
     const val SERVICE_ID = 1001
     const val ALERT_ID = 1002
     const val UPDATE_ID = 1003
@@ -47,14 +48,15 @@ object AlertNotifications {
         ).apply {
             description = "Noodoproepen die blijven rinkelen tot je reageert"
             setBypassDnd(true)
-            enableVibration(true)
+            // De Ringer beheert de herhalende vibratie zelf, zodat die direct stopbaar is.
+            enableVibration(false)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             setSound(null, null)
         }
         manager.createNotificationChannel(alertChannel)
     }
 
-    fun serviceNotification(context: Context): Notification {
+    fun serviceNotification(context: Context, locations: List<String> = emptyList()): Notification {
         val open = PendingIntent.getActivity(
             context,
             0,
@@ -64,11 +66,27 @@ object AlertNotifications {
         return NotificationCompat.Builder(context, SERVICE_CHANNEL)
             .setSmallIcon(R.drawable.ic_shield)
             .setContentTitle("Soteria")
-            .setContentText("BHV-aanwezigheid is actief")
+            .setContentText(presenceText(context, locations))
             .setContentIntent(open)
             .setOngoing(true)
             .setSilent(true)
             .build()
+    }
+
+    fun updatePresence(context: Context, locations: List<String>) {
+        if (!canPostNotifications(context)) return
+        context.getSystemService(NotificationManager::class.java)
+            .notify(SERVICE_ID, serviceNotification(context, locations))
+    }
+
+    private fun presenceText(context: Context, locations: List<String>): String {
+        if (locations.isEmpty()) return context.getString(R.string.presence_service_active)
+        val names = when (locations.size) {
+            1 -> locations.first()
+            2 -> locations.joinToString(" en ")
+            else -> locations.dropLast(1).joinToString(", ") + " en " + locations.last()
+        }
+        return context.getString(R.string.present_in_locations, names)
     }
 
     fun showIncoming(context: Context, alert: PendingAlert) {

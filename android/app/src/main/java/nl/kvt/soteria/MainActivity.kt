@@ -22,6 +22,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val io = Executors.newSingleThreadExecutor()
     private var locations: List<LocationPresence> = emptyList()
+    private var activeAcknowledgedAlerts: List<ActiveAcknowledgedAlert> = emptyList()
+    private var overviewRows: List<OverviewRow> = emptyList()
+
+    private sealed interface OverviewRow {
+        data class Location(val value: LocationPresence) : OverviewRow
+        data class Alert(val value: ActiveAcknowledgedAlert) : OverviewRow
+    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -56,14 +63,11 @@ class MainActivity : AppCompatActivity() {
         binding.callToMe.setOnClickListener { createAlert("caller") }
         binding.refreshButton.setOnClickListener { refresh() }
         binding.locationList.setOnItemClickListener { _, _, position, _ ->
-            val location = locations.getOrNull(position) ?: return@setOnItemClickListener
-            val names = location.people.joinToString("\n") { it.name.ifBlank { it.email } }
-                .ifBlank { "Niemand aanwezig" }
-            AlertDialog.Builder(this)
-                .setTitle("${location.name} (${location.presentCount})")
-                .setMessage(names)
-                .setPositiveButton("Sluiten", null)
-                .show()
+            when (val row = overviewRows.getOrNull(position)) {
+                is OverviewRow.Location -> showLocationPeople(row.value)
+                is OverviewRow.Alert -> openAlertDestination(row.value)
+                null -> Unit
+            }
         }
 
         requestPermissions()
@@ -189,9 +193,17 @@ class MainActivity : AppCompatActivity() {
                 return@execute
             }
             locations = ApiClient.parseLocations(json)
+            activeAcknowledgedAlerts = ApiClient.parseActiveAcknowledgedAlerts(json)
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                val labels = locations.map { "${it.name}: ${it.presentCount} BHV'er(s)" }
+                overviewRows = buildOverviewRows()
+                val labels = overviewRows.map { row ->
+                    when (row) {
+                        is OverviewRow.Location ->
+                            "${row.value.name}: ${row.value.presentCount} BHV'er(s)"
+                        is OverviewRow.Alert -> alertLabel(row.value)
+                    }
+                }
                 binding.locationList.adapter = ArrayAdapter(
                     this,
                     android.R.layout.simple_list_item_1,
@@ -199,6 +211,52 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
+    }
+
+    private fun buildOverviewRows(): List<OverviewRow> = buildList {
+        locations.forEach { location ->
+            add(OverviewRow.Location(location))
+            val userIsPresent = location.people.any {
+                it.email.equals(Prefs.email, ignoreCase = true)
+            }
+            if (userIsPresent) {
+                activeAcknowledgedAlerts.forEach { add(OverviewRow.Alert(it)) }
+            }
+        }
+    }
+
+    private fun alertLabel(alert: ActiveAcknowledgedAlert): String {
+        return if (alert.type == "assembly") {
+            getString(R.string.active_call_to_assembly, alert.destName)
+        } else {
+            getString(R.string.active_call_to_person, alert.callerName)
+        }
+    }
+
+    private fun showLocationPeople(location: LocationPresence) {
+        val names = location.people.joinToString("\n") { it.name.ifBlank { it.email } }
+            .ifBlank { getString(R.string.nobody_present) }
+        AlertDialog.Builder(this)
+            .setTitle("${location.name} (${location.presentCount})")
+            .setMessage(names)
+            .setPositiveButton(R.string.close, null)
+            .show()
+    }
+
+    private fun openAlertDestination(alert: ActiveAcknowledgedAlert) {
+        val navigation = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("google.navigation:q=${alert.destLat},${alert.destLng}")
+        ).setPackage("com.google.android.apps.maps")
+        val web = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse(
+                "https://www.google.com/maps/dir/?api=1&destination=${alert.destLat},${alert.destLng}"
+            )
+        )
+        val opened = runCatching { startActivity(navigation) }.isSuccess ||
+            runCatching { startActivity(web) }.isSuccess
+        if (!opened) Toast.makeText(this, R.string.no_maps_app, Toast.LENGTH_LONG).show()
     }
 
     private fun checkForUpdates() {

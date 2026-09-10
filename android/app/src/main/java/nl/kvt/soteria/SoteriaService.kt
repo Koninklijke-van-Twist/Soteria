@@ -127,6 +127,13 @@ class SoteriaService : Service() {
                     "current_alert_id" to Prefs.currentRespondingAlertId
                 )
             )
+            val ownEmail = Prefs.email.trim().lowercase()
+            val presentAt = ApiClient.parseLocations(json)
+                .filter { location ->
+                    location.people.any { it.email.trim().lowercase() == ownEmail }
+                }
+                .map { it.name }
+            AlertNotifications.updatePresence(this, presentAt)
             val cancelled = json.optJSONObject("cancelled_alert")
             if (cancelled != null) {
                 val cancelledId = cancelled.optInt("id")

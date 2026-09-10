@@ -23,3 +23,12 @@ data class PendingAlert(
     val destLng: Double,
     val message: String
 )
+
+data class ActiveAcknowledgedAlert(
+    val id: Int,
+    val callerName: String,
+    val type: String,
+    val destName: String,
+    val destLat: Double,
+    val destLng: Double
+)

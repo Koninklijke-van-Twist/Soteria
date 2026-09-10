@@ -66,6 +66,7 @@ if ($action === 'heartbeat') {
         'locations' => soteria_locations_with_presence($pdo),
         'pending_alert' => soteria_pending_alert($pdo, $email),
         'cancelled_alert' => $cancelledAlert,
+        'active_acknowledged_alerts' => soteria_active_acknowledged_alerts($pdo, $email),
     ]);
 }
 
@@ -73,6 +74,7 @@ if ($action === 'locations') {
     soteria_json([
         'ok' => true,
         'locations' => soteria_locations_with_presence($pdo),
+        'active_acknowledged_alerts' => soteria_active_acknowledged_alerts($pdo, $email),
     ]);
 }
 

@@ -83,4 +83,23 @@ object ApiClient {
             message = alert.optString("message")
         )
     }
+
+    fun parseActiveAcknowledgedAlerts(json: JSONObject): List<ActiveAcknowledgedAlert> {
+        val array = json.optJSONArray("active_acknowledged_alerts") ?: return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                val alert = array.getJSONObject(index)
+                add(
+                    ActiveAcknowledgedAlert(
+                        id = alert.optInt("id"),
+                        callerName = alert.optString("caller_name"),
+                        type = alert.optString("type"),
+                        destName = alert.optString("dest_name"),
+                        destLat = alert.optDouble("dest_lat"),
+                        destLng = alert.optDouble("dest_lng")
+                    )
+                )
+            }
+        }
+    }
 }

@@ -5,13 +5,11 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
-import android.media.RingtoneManager
 import android.os.Build
 import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import androidx.core.content.ContextCompat
 
 object Ringer {
     const val ACTION_ALERT_CANCELLED = "nl.kvt.soteria.ALERT_CANCELLED"
@@ -21,6 +19,8 @@ object Ringer {
     var activeAlert: PendingAlert? = null
 
     private var player: MediaPlayer? = null
+    private var activeVibrator: Vibrator? = null
+    private var originalAlarmVolume: Int? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     @Synchronized
@@ -52,6 +52,8 @@ object Ringer {
             runCatching { mediaPlayer.release() }
         }
         player = null
+        restoreAlarmVolume(context.applicationContext)
+        stopVibrationLocked(context.applicationContext)
         wakeLock?.let { lock ->
             if (lock.isHeld) lock.release()
         }
@@ -79,22 +81,24 @@ object Ringer {
 
     private fun startSound(context: Context) {
         if (player != null) return
-        val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-            ?: return
-        val mediaPlayer = MediaPlayer()
+        val attributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        val mediaPlayer = MediaPlayer.create(
+            context,
+            R.raw.soteria_alarm,
+            attributes,
+            AudioManager.AUDIO_SESSION_ID_GENERATE
+        ) ?: return
         try {
-            mediaPlayer.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
             mediaPlayer.isLooping = true
-            mediaPlayer.setDataSource(context, uri)
-            mediaPlayer.prepare()
+            mediaPlayer.setVolume(1.0f, 1.0f)
             val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             runCatching {
+                if (originalAlarmVolume == null) {
+                    originalAlarmVolume = audio.getStreamVolume(AudioManager.STREAM_ALARM)
+                }
                 audio.setStreamVolume(
                     AudioManager.STREAM_ALARM,
                     audio.getStreamMaxVolume(AudioManager.STREAM_ALARM),
@@ -106,6 +110,15 @@ object Ringer {
         } catch (error: Exception) {
             runCatching { mediaPlayer.release() }
             throw error
+        }
+    }
+
+    private fun restoreAlarmVolume(context: Context) {
+        val volume = originalAlarmVolume ?: return
+        originalAlarmVolume = null
+        runCatching {
+            val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audio.setStreamVolume(AudioManager.STREAM_ALARM, volume, 0)
         }
     }
 
@@ -130,18 +143,27 @@ object Ringer {
             context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
         val pattern = longArrayOf(0, 800, 400, 800, 400)
-        vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0))
+        activeVibrator = vibrator
+        activeVibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0))
     }
 
+    @Synchronized
     fun stopVibration(context: Context) {
-        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        stopVibrationLocked(context.applicationContext)
+    }
+
+    private fun stopVibrationLocked(context: Context) {
+        activeVibrator?.cancel()
+        activeVibrator = null
+        // Annuleer ook via een nieuw verkregen handle voor OEMs die handles per context bijhouden.
+        val systemVibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val manager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
             manager?.defaultVibrator
         } else {
             @Suppress("DEPRECATION")
             context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
-        vibrator?.cancel()
+        systemVibrator?.cancel()
     }
 
     @Synchronized

@@ -459,6 +459,32 @@ function soteria_active_outgoing_alert(PDO $pdo, string $email): ?array
     return is_array($row) ? $row : null;
 }
 
+function soteria_active_acknowledged_alerts(PDO $pdo, string $email): array
+{
+    $statement = $pdo->prepare(
+        'SELECT a.id, a.caller_name, a.type, a.dest_name, a.dest_lat, a.dest_lng, a.created_at
+         FROM alerts a
+         INNER JOIN alert_recipients r ON r.alert_id = a.id AND r.email = :email
+         INNER JOIN alert_acks k ON k.alert_id = a.id AND k.email = :email
+         WHERE a.active = 1
+         ORDER BY a.created_at DESC'
+    );
+    $statement->execute([':email' => strtolower(trim($email))]);
+    $alerts = [];
+    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $alerts[] = [
+            'id' => (int) $row['id'],
+            'caller_name' => (string) $row['caller_name'],
+            'type' => (string) $row['type'],
+            'dest_name' => (string) $row['dest_name'],
+            'dest_lat' => (float) $row['dest_lat'],
+            'dest_lng' => (float) $row['dest_lng'],
+            'created_at' => (int) $row['created_at'],
+        ];
+    }
+    return $alerts;
+}
+
 function soteria_alert_status(PDO $pdo, int $alertId, string $callerEmail): ?array
 {
     $statement = $pdo->prepare(
