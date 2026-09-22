@@ -5,6 +5,9 @@ require_once __DIR__ . '/auth.php';
 const SOTERIA_PRESENCE_METERS = 1000;
 const SOTERIA_PRESENCE_TTL_SECONDS = 180;
 const SOTERIA_TOKEN_TTL_SECONDS = 2592000; // 30 dagen
+// Open oproepen verlopen na 20 minuten. Een telefoon die uren later online komt
+// krijgt de oproep niet meer; een toestel dat nog rinkelt stopt via de heartbeat.
+const SOTERIA_ALERT_TTL_SECONDS = 1200;
 // Apache blokkeert ^\.ht standaard, ook zonder werkende .htaccess in data/.
 const SOTERIA_DB_PATH = __DIR__ . '/data/.ht-soteria.sqlite';
 const SOTERIA_LEGACY_DB_PATH = __DIR__ . '/data/soteria.sqlite';
@@ -84,6 +87,7 @@ function soteria_pdo(): PDO
         )'
     );
     soteria_add_column_if_missing($pdo, 'alerts', 'cancelled_at', 'INTEGER');
+    soteria_add_column_if_missing($pdo, 'alerts', 'expired_at', 'INTEGER');
     $pdo->exec(
         'CREATE TABLE IF NOT EXISTS alert_recipients (
             alert_id INTEGER NOT NULL,
@@ -91,6 +95,7 @@ function soteria_pdo(): PDO
             PRIMARY KEY (alert_id, email)
         )'
     );
+    soteria_add_column_if_missing($pdo, 'alert_recipients', 'delivered_at', 'INTEGER');
     $pdo->exec(
         'CREATE TABLE IF NOT EXISTS alert_acks (
             alert_id INTEGER NOT NULL,
@@ -409,6 +414,83 @@ function soteria_nearest_location(PDO $pdo, float $lat, float $lng): ?array
     return $nearest;
 }
 
+/**
+ * Zet verlopen open oproepen inactief. Geannuleerde oproepen blijven ongemoeid.
+ */
+function soteria_expire_stale_alerts(PDO $pdo): void
+{
+    $now = time();
+    $statement = $pdo->prepare(
+        'UPDATE alerts
+         SET active = 0, expired_at = :now
+         WHERE active = 1
+           AND cancelled_at IS NULL
+           AND created_at <= :cutoff'
+    );
+    $statement->execute([
+        ':now' => $now,
+        ':cutoff' => $now - SOTERIA_ALERT_TTL_SECONDS,
+    ]);
+}
+
+/**
+ * De heartbeat heeft pending_alert op dit toestel afgeleverd.
+ * Dit is iets anders dan de gebruiker die op Bevestigen tikt.
+ */
+function soteria_mark_alert_delivered(PDO $pdo, int $alertId, string $email): void
+{
+    if ($alertId <= 0) {
+        return;
+    }
+    $statement = $pdo->prepare(
+        'UPDATE alert_recipients
+         SET delivered_at = :now
+         WHERE alert_id = :alert_id AND email = :email AND delivered_at IS NULL'
+    );
+    $statement->execute([
+        ':now' => time(),
+        ':alert_id' => $alertId,
+        ':email' => strtolower(trim($email)),
+    ]);
+}
+
+/**
+ * @return array{cancelled: ?array, expired: ?array}
+ */
+function soteria_inactive_alert_for_recipient(PDO $pdo, string $email, int $alertId): array
+{
+    $empty = ['cancelled' => null, 'expired' => null];
+    if ($alertId <= 0) {
+        return $empty;
+    }
+    $statement = $pdo->prepare(
+        'SELECT a.id, a.caller_name, a.cancelled_at, a.expired_at
+         FROM alerts a
+         INNER JOIN alert_recipients r ON r.alert_id = a.id AND r.email = :email
+         WHERE a.id = :id AND a.active = 0
+         LIMIT 1'
+    );
+    $statement->execute([
+        ':email' => strtolower(trim($email)),
+        ':id' => $alertId,
+    ]);
+    $row = $statement->fetch(PDO::FETCH_ASSOC);
+    if (!is_array($row)) {
+        return $empty;
+    }
+    $payload = [
+        'id' => (int) $row['id'],
+        'caller_name' => (string) $row['caller_name'],
+    ];
+    if ($row['expired_at'] !== null) {
+        return ['cancelled' => null, 'expired' => $payload];
+    }
+    if ($row['cancelled_at'] !== null) {
+        return ['cancelled' => $payload, 'expired' => null];
+    }
+    return $empty;
+}
+
 function soteria_pending_alert(PDO $pdo, string $email): ?array
 {
     $statement = $pdo->prepare(
@@ -489,7 +571,7 @@ function soteria_alert_status(PDO $pdo, int $alertId, string $callerEmail): ?arr
 {
     $statement = $pdo->prepare(
         'SELECT id, caller_email, caller_name, type, dest_name, dest_lat, dest_lng,
-                created_at, active, cancelled_at
+                created_at, active, cancelled_at, expired_at
          FROM alerts
          WHERE id = :id AND caller_email = :caller_email
          LIMIT 1'
@@ -510,7 +592,7 @@ function soteria_alert_status(PDO $pdo, int $alertId, string $callerEmail): ?arr
     $callerLng = (float) ($callerPosition['last_lng'] ?? $alert['dest_lng'] ?? 0);
 
     $recipients = $pdo->prepare(
-        'SELECT r.email, u.display_name, u.last_lat, u.last_lng, u.last_seen, k.acked_at
+        'SELECT r.email, r.delivered_at, u.display_name, u.last_lat, u.last_lng, u.last_seen, k.acked_at
          FROM alert_recipients r
          LEFT JOIN users u ON u.email = r.email
          LEFT JOIN alert_acks k ON k.alert_id = r.alert_id AND k.email = r.email
@@ -533,6 +615,8 @@ function soteria_alert_status(PDO $pdo, int $alertId, string $callerEmail): ?arr
         $people[] = [
             'email' => (string) $recipient['email'],
             'name' => trim((string) ($recipient['display_name'] ?? '')) ?: (string) $recipient['email'],
+            'delivered' => $recipient['delivered_at'] !== null,
+            'delivered_at' => $recipient['delivered_at'] !== null ? (int) $recipient['delivered_at'] : null,
             'responded' => $recipient['acked_at'] !== null,
             'responded_at' => $recipient['acked_at'] !== null ? (int) $recipient['acked_at'] : null,
             'distance_meters' => $distance,
@@ -550,6 +634,7 @@ function soteria_alert_status(PDO $pdo, int $alertId, string $callerEmail): ?arr
         'created_at' => (int) $alert['created_at'],
         'active' => (bool) $alert['active'],
         'cancelled_at' => $alert['cancelled_at'] !== null ? (int) $alert['cancelled_at'] : null,
+        'expired_at' => $alert['expired_at'] !== null ? (int) $alert['expired_at'] : null,
         'recipients' => $people,
     ];
 }

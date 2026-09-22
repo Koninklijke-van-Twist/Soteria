@@ -23,6 +23,7 @@ class CallerAlertActivity : AppCompatActivity() {
     private val executor = Executors.newSingleThreadScheduledExecutor()
     private var pollTask: ScheduledFuture<*>? = null
     private var alertId = 0
+    private var closing = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -70,7 +71,16 @@ class CallerAlertActivity : AppCompatActivity() {
         }.getOrNull() ?: return
         val alert = json.optJSONObject("alert") ?: return
         if (!alert.optBoolean("active")) {
-            runOnUiThread { closeAfterCancellation() }
+            val expired = alert.has("expired_at") && !alert.isNull("expired_at")
+            runOnUiThread {
+                if (closing || isFinishing || isDestroyed) return@runOnUiThread
+                Toast.makeText(
+                    this,
+                    if (expired) R.string.alert_expired else R.string.call_cancelled,
+                    Toast.LENGTH_LONG
+                ).show()
+                closeAfterCancellation()
+            }
             return
         }
         runOnUiThread {
@@ -88,28 +98,39 @@ class CallerAlertActivity : AppCompatActivity() {
         }
 
         val recipients = alert.optJSONArray("recipients")
-        var responded = 0
+        var acknowledged = 0
+        var deliveredOnly = 0
+        var notDelivered = 0
         val labels = mutableListOf<String>()
         if (recipients != null) {
             for (index in 0 until recipients.length()) {
                 val person = recipients.getJSONObject(index)
-                val didRespond = person.optBoolean("responded")
-                if (didRespond) responded++
+                val didAcknowledge = person.optBoolean("responded")
+                val didDeliver = person.optBoolean("delivered")
+                when {
+                    didAcknowledge -> acknowledged++
+                    didDeliver -> deliveredOnly++
+                    else -> notDelivered++
+                }
                 val distance = if (person.isNull("distance_meters")) {
                     getString(R.string.distance_unknown)
                 } else {
                     formatDistance(person.optDouble("distance_meters"))
                 }
-                val status = if (didRespond) {
-                    getString(R.string.responded)
-                } else {
-                    getString(R.string.no_response_yet)
+                val status = when {
+                    didAcknowledge -> getString(R.string.status_acknowledged)
+                    didDeliver -> getString(R.string.status_delivered)
+                    else -> getString(R.string.status_not_delivered)
                 }
                 labels += "${person.optString("name")}\n$status · $distance"
             }
         }
-        val total = recipients?.length() ?: 0
-        binding.summary.text = getString(R.string.response_summary, responded, total)
+        binding.summary.text = getString(
+            R.string.response_summary,
+            acknowledged,
+            deliveredOnly,
+            notDelivered
+        )
         binding.responderList.adapter = ArrayAdapter(
             this,
             android.R.layout.simple_list_item_1,
@@ -135,6 +156,7 @@ class CallerAlertActivity : AppCompatActivity() {
     }
 
     private fun cancelAlert() {
+        closing = true
         binding.cancelButton.isEnabled = false
         executor.execute {
             val json = runCatching {
@@ -146,6 +168,7 @@ class CallerAlertActivity : AppCompatActivity() {
                     Toast.makeText(this, R.string.call_cancelled, Toast.LENGTH_LONG).show()
                     closeAfterCancellation()
                 } else {
+                    closing = false
                     binding.cancelButton.isEnabled = true
                     Toast.makeText(
                         this,
@@ -160,6 +183,8 @@ class CallerAlertActivity : AppCompatActivity() {
     }
 
     private fun closeAfterCancellation() {
+        if (isFinishing) return
+        closing = true
         startActivity(
             Intent(this, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)

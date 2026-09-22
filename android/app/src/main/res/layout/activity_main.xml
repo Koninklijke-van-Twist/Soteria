@@ -27,6 +27,25 @@
             android:textColor="@color/muted"
             android:textSize="16sp" />
 
+        <TextView
+            android:id="@+id/reliabilityBanner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:padding="14dp"
+            android:textColor="@android:color/white"
+            android:textSize="16sp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/reliabilityAction"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textAllCaps="false"
+            android:textSize="16sp"
+            android:visibility="gone" />
+
         <Button
             android:id="@+id/callButton"
             android:layout_width="match_parent"

@@ -15,6 +15,7 @@ if ($action === '') {
 $user = soteria_require_api_user($pdo, $body);
 $email = strtolower(trim((string) ($user['email'] ?? '')));
 $displayName = (string) ($user['display_name'] ?? soteria_display_name_for_email($email));
+soteria_expire_stale_alerts($pdo);
 
 if ($action === 'me') {
     soteria_json([
@@ -26,6 +27,11 @@ if ($action === 'me') {
 }
 
 if ($action === 'heartbeat') {
+    $deliveredAlertId = (int) ($body['delivered_alert_id'] ?? 0);
+    if ($deliveredAlertId > 0) {
+        soteria_mark_alert_delivered($pdo, $deliveredAlertId, $email);
+    }
+
     $lat = (float) ($body['lat'] ?? $_POST['lat'] ?? 0);
     $lng = (float) ($body['lng'] ?? $_POST['lng'] ?? 0);
     soteria_upsert_user($pdo, $email, $displayName);
@@ -42,30 +48,14 @@ if ($action === 'heartbeat') {
     }
 
     $currentAlertId = (int) ($body['current_alert_id'] ?? 0);
-    $cancelledAlert = null;
-    if ($currentAlertId > 0) {
-        $cancelled = $pdo->prepare(
-            'SELECT a.id, a.caller_name
-             FROM alerts a
-             INNER JOIN alert_recipients r ON r.alert_id = a.id AND r.email = :email
-             WHERE a.id = :id AND a.active = 0 AND a.cancelled_at IS NOT NULL
-             LIMIT 1'
-        );
-        $cancelled->execute([':email' => $email, ':id' => $currentAlertId]);
-        $row = $cancelled->fetch(PDO::FETCH_ASSOC);
-        if (is_array($row)) {
-            $cancelledAlert = [
-                'id' => (int) $row['id'],
-                'caller_name' => (string) $row['caller_name'],
-            ];
-        }
-    }
+    $inactive = soteria_inactive_alert_for_recipient($pdo, $email, $currentAlertId);
 
     soteria_json([
         'ok' => true,
         'locations' => soteria_locations_with_presence($pdo),
         'pending_alert' => soteria_pending_alert($pdo, $email),
-        'cancelled_alert' => $cancelledAlert,
+        'cancelled_alert' => $inactive['cancelled'],
+        'expired_alert' => $inactive['expired'],
         'active_acknowledged_alerts' => soteria_active_acknowledged_alerts($pdo, $email),
     ]);
 }
@@ -103,6 +93,7 @@ if ($action === 'ack_alert') {
         soteria_json(['ok' => false, 'error' => 'Actieve oproep niet gevonden.'], 404);
     }
 
+    soteria_mark_alert_delivered($pdo, $alertId, $email);
     $ack = $pdo->prepare(
         'INSERT INTO alert_acks (alert_id, email, acked_at)
          VALUES (:alert_id, :email, :acked_at)
