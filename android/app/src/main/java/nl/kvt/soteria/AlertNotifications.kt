@@ -10,6 +10,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 
@@ -228,6 +229,7 @@ object AlertNotifications {
     }
 
     fun canPostNotifications(context: Context): Boolean {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
         return Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED

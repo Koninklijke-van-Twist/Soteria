@@ -268,7 +268,7 @@ class MainActivity : AppCompatActivity() {
             ) { promptForNotifications(allowSettings = true) }
             !hasLocationPermission() -> hideReliabilityBanner()
             shouldWarnServiceDown() -> {
-                val message = if (Prefs.bootPresenceInactive && Build.VERSION.SDK_INT >= 35) {
+                val message = if (Prefs.bootPresenceInactive) {
                     getString(R.string.presence_inactive_boot)
                 } else {
                     getString(R.string.service_not_running)

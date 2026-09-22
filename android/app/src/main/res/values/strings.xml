@@ -28,8 +28,8 @@
     <string name="presence_service_active">BHV-aanwezigheid is actief</string>
     <string name="presence_inactive_title">Soteria staat uit</string>
     <string name="presence_inactive_notification">Aanwezigheid en oproepen zijn uit tot je Soteria opent.</string>
-    <string name="presence_inactive_boot">Na een herstart kan Android 15 aanwezigheid niet zelf starten. Open Soteria; daarna werken aanwezigheid en oproepen weer.</string>
-    <string name="presence_resumed_message">Android kan Soteria na een herstart niet altijd zelf starten. Je hebt de app geopend; aanwezigheid en oproepen staan weer aan.</string>
+    <string name="presence_inactive_boot">Na een herstart is de aanwezigheid niet gestart. Open Soteria; daarna werken aanwezigheid en oproepen weer.</string>
+    <string name="presence_resumed_message">Soteria kon na de herstart niet zelf starten. Je hebt de app geopend; aanwezigheid en oproepen staan weer aan.</string>
     <string name="notifications_required">Zonder meldingstoestemming kan Soteria geen noodoproep tonen. Aanwezigheid en oproepen blijven uit tot je toestemming geeft.</string>
     <string name="grant_notifications">Meldingen toestaan</string>
     <string name="battery_exemption_missing">Batterijoptimalisatie staat aan. Android kan Soteria dan stoppen, waardoor oproepen niet binnenkomen.</string>

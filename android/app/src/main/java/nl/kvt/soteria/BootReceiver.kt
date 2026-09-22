@@ -27,10 +27,8 @@ class BootReceiver : BroadcastReceiver() {
     private fun canStartAfterBoot(context: Context): Boolean {
         if (!hasLocation(context)) return false
         if (!AlertNotifications.canPostNotifications(context)) return false
-        // Android 15 staat niet toe dat een locatie-FGS vanuit BOOT_COMPLETED start.
-        // De gebruiker moet de app zelf openen; zie markPresenceInactive.
-        if (Build.VERSION.SDK_INT >= 35) return false
-        // Android 14 vereist bij zo'n achtergrondstart bovendien achtergrondlocatie.
+        // Android 14+ vereist bij een achtergrondstart van een locatie-FGS ook achtergrondlocatie.
+        // Het type location valt niet onder de BOOT_COMPLETED-blokkade van Android 15.
         if (Build.VERSION.SDK_INT >= 34 && !hasBackgroundLocation(context)) return false
         return true
     }
@@ -38,12 +36,10 @@ class BootReceiver : BroadcastReceiver() {
     private fun markPresenceInactive(context: Context) {
         Prefs.bootPresenceInactive = true
         Prefs.lastServiceNudgeAt = System.currentTimeMillis()
-        val text = if (Build.VERSION.SDK_INT >= 35) {
+        AlertNotifications.showStatusCue(
+            context,
             context.getString(R.string.presence_inactive_notification)
-        } else {
-            context.getString(R.string.service_died_notification)
-        }
-        AlertNotifications.showStatusCue(context, text)
+        )
     }
 
     private fun hasLocation(context: Context): Boolean {
