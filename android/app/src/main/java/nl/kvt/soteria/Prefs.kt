@@ -4,6 +4,11 @@ import android.content.Context
 import android.content.SharedPreferences
 
 object Prefs {
+    const val BLOCK_NONE = ""
+    const val BLOCK_NOTIFICATIONS = "notifications"
+    const val BLOCK_FOREGROUND = "foreground"
+    const val BLOCK_LOCATION = "location"
+
     private lateinit var prefs: SharedPreferences
 
     val defaultApiBaseUrl: String
@@ -48,6 +53,30 @@ object Prefs {
         get() = prefs.getBoolean("asked_battery", false)
         set(value) { prefs.edit().putBoolean("asked_battery", value).apply() }
 
+    var lastBatteryPromptAt: Long
+        get() = prefs.getLong("last_battery_prompt_at", 0L)
+        set(value) { prefs.edit().putLong("last_battery_prompt_at", value).apply() }
+
+    var askedNotifications: Boolean
+        get() = prefs.getBoolean("asked_notifications", false)
+        set(value) { prefs.edit().putBoolean("asked_notifications", value).apply() }
+
+    var serviceBlockReason: String
+        get() = prefs.getString("service_block_reason", "") ?: ""
+        set(value) { prefs.edit().putString("service_block_reason", value).commit() }
+
+    var bootPresenceInactive: Boolean
+        get() = prefs.getBoolean("boot_presence_inactive", false)
+        set(value) { prefs.edit().putBoolean("boot_presence_inactive", value).commit() }
+
+    var deliveredAlertId: Int
+        get() = prefs.getInt("delivered_alert_id", 0)
+        set(value) { prefs.edit().putInt("delivered_alert_id", value).apply() }
+
+    var lastServiceNudgeAt: Long
+        get() = prefs.getLong("last_service_nudge_at", 0L)
+        set(value) { prefs.edit().putLong("last_service_nudge_at", value).apply() }
+
     var askedBackgroundLocation: Boolean
         get() = prefs.getBoolean("asked_background_location", false)
         set(value) { prefs.edit().putBoolean("asked_background_location", value).apply() }
@@ -91,6 +120,7 @@ object Prefs {
             .remove("email")
             .remove("current_responding_alert_id")
             .remove("acknowledged_alert_id")
+            .remove("delivered_alert_id")
             .apply()
     }
 }

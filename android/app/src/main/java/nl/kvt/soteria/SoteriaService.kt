@@ -26,6 +26,12 @@ class SoteriaService : Service() {
     private var lastLng = 0.0
     private var ringingAlertId: Int? = null
 
+    companion object {
+        @Volatile
+        var running: Boolean = false
+            private set
+    }
+
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val location = result.lastLocation ?: return
@@ -38,15 +44,40 @@ class SoteriaService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        running = false
         val fine = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
         val coarse = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
         if (!fine && !coarse) {
+            Prefs.serviceBlockReason = Prefs.BLOCK_LOCATION
+            Watchdog.schedule(this)
             stopSelf()
             return
         }
         AlertNotifications.ensureChannels(this)
+        val foregroundStarted = promoteToForeground()
+        if (!foregroundStarted) {
+            Prefs.serviceBlockReason = Prefs.BLOCK_FOREGROUND
+            Watchdog.schedule(this)
+            stopSelf()
+            return
+        }
+        if (!AlertNotifications.canPostNotifications(this)) {
+            Prefs.serviceBlockReason = Prefs.BLOCK_NOTIFICATIONS
+            Watchdog.schedule(this)
+            stopSelf()
+            return
+        }
+        Prefs.serviceBlockReason = Prefs.BLOCK_NONE
+        running = true
+        AlertNotifications.cancelStatus(this)
+        Watchdog.schedule(this)
+        startLocationUpdates()
+        pollTask = executor.scheduleWithFixedDelay({ tick() }, 0, 5, TimeUnit.SECONDS)
+    }
+
+    private fun promoteToForeground(): Boolean {
         val notification = AlertNotifications.serviceNotification(this)
         val fgsType = when {
             Build.VERSION.SDK_INT >= 34 ->
@@ -55,7 +86,7 @@ class SoteriaService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             else -> 0
         }
-        val foregroundStarted = runCatching {
+        return runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceCompat.startForeground(
                     this,
@@ -67,12 +98,6 @@ class SoteriaService : Service() {
                 startForeground(AlertNotifications.SERVICE_ID, notification)
             }
         }.isSuccess
-        if (!foregroundStarted) {
-            stopSelf()
-            return
-        }
-        startLocationUpdates()
-        pollTask = executor.scheduleWithFixedDelay({ tick() }, 0, 5, TimeUnit.SECONDS)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -80,6 +105,7 @@ class SoteriaService : Service() {
     }
 
     override fun onDestroy() {
+        running = false
         pollTask?.cancel(true)
         LocationServices.getFusedLocationProviderClient(this).removeLocationUpdates(locationCallback)
         executor.shutdownNow()
@@ -105,6 +131,12 @@ class SoteriaService : Service() {
 
     private fun tick() {
         if (!Prefs.isLoggedIn) {
+            Watchdog.cancel(this)
+            stopSelf()
+            return
+        }
+        if (!AlertNotifications.canPostNotifications(this)) {
+            Prefs.serviceBlockReason = Prefs.BLOCK_NOTIFICATIONS
             stopSelf()
             return
         }
@@ -119,14 +151,16 @@ class SoteriaService : Service() {
             if (acknowledgedAlertId > 0) {
                 ApiClient.post("ack_alert", mapOf("alert_id" to acknowledgedAlertId))
             }
-            val json = ApiClient.post(
-                "heartbeat",
-                mapOf(
-                    "lat" to lastLat,
-                    "lng" to lastLng,
-                    "current_alert_id" to Prefs.currentRespondingAlertId
-                )
+            val payload = mutableMapOf<String, Any?>(
+                "lat" to lastLat,
+                "lng" to lastLng,
+                "current_alert_id" to Prefs.currentRespondingAlertId
             )
+            val deliveredAlertId = Prefs.deliveredAlertId
+            if (deliveredAlertId > 0) {
+                payload["delivered_alert_id"] = deliveredAlertId
+            }
+            val json = ApiClient.post("heartbeat", payload)
             val ownEmail = Prefs.email.trim().lowercase()
             val presentAt = ApiClient.parseLocations(json)
                 .filter { location ->
@@ -144,10 +178,34 @@ class SoteriaService : Service() {
                 )
                 if (ringingAlertId == cancelledId) ringingAlertId = null
             }
+            val expired = json.optJSONObject("expired_alert")
+            if (expired != null) {
+                val expiredId = expired.optInt("id")
+                val alreadyAcknowledged = Prefs.acknowledgedAlertId == expiredId
+                Ringer.cancelAlert(this, expiredId)
+                if (!alreadyAcknowledged) AlertNotifications.showExpired(this)
+                if (ringingAlertId == expiredId) ringingAlertId = null
+            }
             val alert = ApiClient.parseAlert(json)
-            if (alert != null && ringingAlertId != alert.id) {
-                ringingAlertId = alert.id
-                Ringer.start(this, alert)
+            if (alert != null) {
+                val firstDelivery = Prefs.deliveredAlertId != alert.id
+                // Afgeleverd = toestel heeft pending_alert gezien. Los van Bevestigen.
+                Prefs.deliveredAlertId = alert.id
+                if (ringingAlertId != alert.id) {
+                    ringingAlertId = alert.id
+                    Ringer.start(this, alert)
+                }
+                if (firstDelivery) {
+                    ApiClient.post(
+                        "heartbeat",
+                        mapOf(
+                            "lat" to lastLat,
+                            "lng" to lastLng,
+                            "current_alert_id" to Prefs.currentRespondingAlertId,
+                            "delivered_alert_id" to alert.id
+                        )
+                    )
+                }
             }
         }
     }

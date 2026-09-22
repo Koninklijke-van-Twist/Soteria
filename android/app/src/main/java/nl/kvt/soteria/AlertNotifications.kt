@@ -22,6 +22,9 @@ object AlertNotifications {
     const val UPDATE_ID = 1003
     const val CANCELLED_ID = 1004
     const val UPDATE_CHANNEL = "soteria_update"
+    const val STATUS_CHANNEL = "soteria_status"
+    const val STATUS_ID = 1005
+    const val EXPIRED_ID = 1006
 
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -54,6 +57,15 @@ object AlertNotifications {
             setSound(null, null)
         }
         manager.createNotificationChannel(alertChannel)
+        manager.createNotificationChannel(
+            NotificationChannel(
+                STATUS_CHANNEL,
+                "Soteria status",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Melding als aanwezigheid of oproepen uit staan"
+            }
+        )
     }
 
     fun serviceNotification(context: Context, locations: List<String> = emptyList()): Notification {
@@ -148,6 +160,52 @@ object AlertNotifications {
         context.getSystemService(NotificationManager::class.java).cancel(ALERT_ID)
     }
 
+    fun showStatusCue(context: Context, text: String) {
+        if (!canPostNotifications(context)) return
+        ensureChannels(context)
+        val open = PendingIntent.getActivity(
+            context,
+            STATUS_ID,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, STATUS_CHANNEL)
+            .setSmallIcon(R.drawable.ic_shield)
+            .setContentTitle(context.getString(R.string.presence_inactive_title))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        context.getSystemService(NotificationManager::class.java).notify(STATUS_ID, notification)
+    }
+
+    fun cancelStatus(context: Context) {
+        context.getSystemService(NotificationManager::class.java).cancel(STATUS_ID)
+    }
+
+    fun showExpired(context: Context) {
+        if (!canPostNotifications(context)) return
+        val open = PendingIntent.getActivity(
+            context,
+            EXPIRED_ID,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val text = context.getString(R.string.alert_expired)
+        val notification = NotificationCompat.Builder(context, ALERT_CHANNEL)
+            .setSmallIcon(R.drawable.ic_shield)
+            .setContentTitle(context.getString(R.string.alert_expired_title))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        context.getSystemService(NotificationManager::class.java).notify(EXPIRED_ID, notification)
+    }
+
     fun showCancelled(context: Context, callerName: String) {
         if (!canPostNotifications(context)) return
         val open = PendingIntent.getActivity(
@@ -169,7 +227,7 @@ object AlertNotifications {
         context.getSystemService(NotificationManager::class.java).notify(CANCELLED_ID, notification)
     }
 
-    private fun canPostNotifications(context: Context): Boolean {
+    fun canPostNotifications(context: Context): Boolean {
         return Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED

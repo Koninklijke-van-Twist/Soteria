@@ -15,6 +15,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import nl.kvt.soteria.databinding.ActivityMainBinding
 import java.util.concurrent.Executors
 
@@ -24,6 +25,10 @@ class MainActivity : AppCompatActivity() {
     private var locations: List<LocationPresence> = emptyList()
     private var activeAcknowledgedAlerts: List<ActiveAcknowledgedAlert> = emptyList()
     private var overviewRows: List<OverviewRow> = emptyList()
+    private var suppressNotificationPrompt = false
+    private var skipNextNotificationPrompt = false
+    private var serviceStartSettled = false
+    private var createdAtMs = 0L
 
     private sealed interface OverviewRow {
         data class Location(val value: LocationPresence) : OverviewRow
@@ -43,6 +48,19 @@ class MainActivity : AppCompatActivity() {
         askForBatteryOptimizationException()
     }
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        suppressNotificationPrompt = false
+        if (granted) {
+            skipNextNotificationPrompt = false
+            continueAfterForegroundPermissions()
+        } else {
+            skipNextNotificationPrompt = true
+            updateReliabilityUi()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!Prefs.isLoggedIn) {
@@ -51,12 +69,18 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        createdAtMs = System.currentTimeMillis()
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         binding.userName.text = Prefs.displayName.ifBlank { Prefs.email }
         binding.choicePanel.visibility = View.GONE
 
         binding.callButton.setOnClickListener {
+            if (!hasNotificationPermission()) {
+                updateReliabilityUi()
+                promptForNotifications(allowSettings = true)
+                return@setOnClickListener
+            }
             binding.choicePanel.visibility = View.VISIBLE
         }
         binding.callToAssembly.setOnClickListener { createAlert("assembly") }
@@ -75,12 +99,25 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (Prefs.isLoggedIn) {
-            startServiceSafely()
-            refresh()
-            resumeOutgoingAlert()
-            checkForUpdates()
+        if (!Prefs.isLoggedIn || !::binding.isInitialized) return
+        if (hasLocationPermission()) {
+            if (!hasNotificationPermission()) {
+                if (skipNextNotificationPrompt) {
+                    skipNextNotificationPrompt = false
+                } else if (!suppressNotificationPrompt) {
+                    promptForNotifications(allowSettings = false)
+                }
+            } else {
+                startServiceSafely()
+                if (System.currentTimeMillis() - createdAtMs > 1500L) {
+                    askForBatteryOptimizationException()
+                }
+            }
         }
+        updateReliabilityUi()
+        refresh()
+        resumeOutgoingAlert()
+        checkForUpdates()
     }
 
     private fun requestPermissions() {
@@ -88,9 +125,6 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
         )
-        if (Build.VERSION.SDK_INT >= 33) {
-            needed.add(Manifest.permission.POST_NOTIFICATIONS)
-        }
         val missing = needed.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
@@ -103,6 +137,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun continueAfterForegroundPermissions() {
         if (!hasLocationPermission()) {
+            updateReliabilityUi()
+            return
+        }
+        if (!hasNotificationPermission()) {
+            updateReliabilityUi()
             return
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
@@ -145,18 +184,136 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun askForBatteryOptimizationException() {
-        if (Prefs.askedBattery) return
-        val pm = getSystemService(PowerManager::class.java)
-        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-            Prefs.askedBattery = true
-            runCatching {
-                startActivity(
-                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                        data = Uri.parse("package:$packageName")
-                    }
-                )
+        requestBatteryExemption(force = false)
+    }
+
+    private fun requestBatteryExemption(force: Boolean) {
+        if (isIgnoringBatteryOptimizations()) return
+        val now = System.currentTimeMillis()
+        if (!force && now - Prefs.lastBatteryPromptAt < BATTERY_PROMPT_INTERVAL_MS) return
+        Prefs.lastBatteryPromptAt = now
+        Prefs.askedBattery = true
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+            )
+        }
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        return getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun backgroundLocationPromptPending(): Boolean {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) return false
+        val granted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        return !granted && !Prefs.askedBackgroundLocation
+    }
+
+    private fun hasNotificationPermission(): Boolean {
+        return AlertNotifications.canPostNotifications(this)
+    }
+
+    private fun promptForNotifications(allowSettings: Boolean) {
+        if (Build.VERSION.SDK_INT < 33 || hasNotificationPermission()) return
+        val canAsk = !Prefs.askedNotifications ||
+            shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+        if (!canAsk) {
+            if (allowSettings) openNotificationSettings()
+            return
+        }
+        suppressNotificationPrompt = true
+        Prefs.askedNotifications = true
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun openNotificationSettings() {
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        }
+        runCatching { startActivity(intent) }
+    }
+
+    private fun updateReliabilityUi() {
+        if (!::binding.isInitialized || isFinishing || isDestroyed) return
+        val callsAllowed = hasNotificationPermission()
+        binding.callButton.isEnabled = callsAllowed
+        binding.callToAssembly.isEnabled = callsAllowed
+        binding.callToMe.isEnabled = callsAllowed
+        if (SoteriaService.running) {
+            Prefs.serviceBlockReason = Prefs.BLOCK_NONE
+            AlertNotifications.cancelStatus(this)
+            if (Prefs.bootPresenceInactive &&
+                lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+            ) {
+                Prefs.bootPresenceInactive = false
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.presence_inactive_title)
+                    .setMessage(R.string.presence_resumed_message)
+                    .setPositiveButton(R.string.close, null)
+                    .show()
             }
         }
+
+        when {
+            !callsAllowed -> showReliabilityBanner(
+                message = getString(R.string.notifications_required),
+                action = getString(R.string.grant_notifications),
+                severe = true
+            ) { promptForNotifications(allowSettings = true) }
+            !hasLocationPermission() -> hideReliabilityBanner()
+            shouldWarnServiceDown() -> {
+                val message = if (Prefs.bootPresenceInactive && Build.VERSION.SDK_INT >= 35) {
+                    getString(R.string.presence_inactive_boot)
+                } else {
+                    getString(R.string.service_not_running)
+                }
+                showReliabilityBanner(
+                    message = message,
+                    action = getString(R.string.restart_service),
+                    severe = true
+                ) { startServiceSafely() }
+            }
+            !isIgnoringBatteryOptimizations() -> showReliabilityBanner(
+                message = getString(R.string.battery_exemption_missing),
+                action = getString(R.string.allow_battery),
+                severe = false
+            ) { requestBatteryExemption(force = true) }
+            else -> hideReliabilityBanner()
+        }
+    }
+
+    private fun shouldWarnServiceDown(): Boolean {
+        if (SoteriaService.running) return false
+        return serviceStartSettled ||
+            Prefs.bootPresenceInactive ||
+            Prefs.serviceBlockReason.isNotBlank()
+    }
+
+    private fun showReliabilityBanner(
+        message: String,
+        action: String,
+        severe: Boolean,
+        onAction: () -> Unit
+    ) {
+        binding.reliabilityBanner.visibility = View.VISIBLE
+        binding.reliabilityBanner.text = message
+        binding.reliabilityBanner.setBackgroundColor(
+            ContextCompat.getColor(this, if (severe) R.color.danger else R.color.accent)
+        )
+        binding.reliabilityAction.visibility = View.VISIBLE
+        binding.reliabilityAction.text = action
+        binding.reliabilityAction.setOnClickListener { onAction() }
+    }
+
+    private fun hideReliabilityBanner() {
+        binding.reliabilityBanner.visibility = View.GONE
+        binding.reliabilityAction.visibility = View.GONE
     }
 
     private fun hasLocationPermission(): Boolean {
@@ -167,10 +324,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startServiceSafely() {
-        if (!hasLocationPermission()) return
-        runCatching {
-            ContextCompat.startForegroundService(this, Intent(this, SoteriaService::class.java))
+        if (!hasLocationPermission() || !hasNotificationPermission()) {
+            updateReliabilityUi()
+            return
         }
+        serviceStartSettled = false
+        val started = runCatching {
+            ContextCompat.startForegroundService(this, Intent(this, SoteriaService::class.java))
+        }.onFailure {
+            Prefs.serviceBlockReason = Prefs.BLOCK_FOREGROUND
+        }.isSuccess
+        if (!started) updateReliabilityUi()
+        binding.root.postDelayed({
+            serviceStartSettled = true
+            if (!isFinishing && !isDestroyed) updateReliabilityUi()
+        }, 800)
     }
 
     private fun refresh() {
@@ -280,6 +448,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createAlert(type: String) {
+        if (!hasNotificationPermission()) {
+            updateReliabilityUi()
+            promptForNotifications(allowSettings = true)
+            return
+        }
         io.execute {
             val json = runCatching { ApiClient.post("create_alert", mapOf("type" to type)) }.getOrNull()
             runOnUiThread {
@@ -322,5 +495,9 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         io.shutdownNow()
         super.onDestroy()
+    }
+
+    companion object {
+        private const val BATTERY_PROMPT_INTERVAL_MS = 12 * 60 * 60 * 1000L
     }
 }
