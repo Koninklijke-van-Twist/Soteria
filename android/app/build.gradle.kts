@@ -31,8 +31,9 @@ android {
             create("release") {
                 storeFile = file(keystoreFile)
                 storePassword = keystorePassword
-                this.keyAlias = keyAlias ?: "soteria"
-                this.keyPassword = keyPassword ?: keystorePassword
+                // Alias defaults to "soteria"; key password defaults to keystore password.
+                this.keyAlias = keyAlias?.takeIf { it.isNotBlank() } ?: "soteria"
+                this.keyPassword = keyPassword?.takeIf { it.isNotBlank() } ?: keystorePassword
             }
         }
     }
@@ -44,8 +45,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            val releaseSigning = signingConfigs.findByName("release")
-            signingConfig = releaseSigning ?: signingConfigs.getByName("debug")
+            // Never fall back to debug signing. If release config is absent, leave
+            // unsigned so assembleRelease fails clearly (see task check below).
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
         debug {
             signingConfig = signingConfigs.getByName("debug")
@@ -72,6 +74,21 @@ android {
     buildFeatures {
         buildConfig = true
         viewBinding = true
+    }
+}
+
+
+// Fail assembleRelease when release signing secrets are missing (local debug builds still work).
+tasks.configureEach {
+    if (name == "assembleRelease" || name == "packageRelease") {
+        doFirst {
+            if (android.signingConfigs.findByName("release") == null) {
+                throw GradleException(
+                    "Release signing is not configured. Set ANDROID_KEYSTORE_PATH and " +
+                        "ANDROID_KEYSTORE_PASSWORD (optionally ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD)."
+                )
+            }
+        }
     }
 }
 
