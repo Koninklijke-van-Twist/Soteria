@@ -547,10 +547,19 @@ function soteria_set_user_roles(PDO $pdo, string $email, array $roles): void
         $clean[$normalized] = true;
     }
 
-    $pdo->prepare('DELETE FROM user_roles WHERE email = :email')->execute([':email' => $email]);
-    $insert = $pdo->prepare('INSERT INTO user_roles (email, role) VALUES (:email, :role)');
-    foreach (array_keys($clean) as $role) {
-        $insert->execute([':email' => $email, ':role' => $role]);
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('DELETE FROM user_roles WHERE email = :email')->execute([':email' => $email]);
+        $insert = $pdo->prepare('INSERT INTO user_roles (email, role) VALUES (:email, :role)');
+        foreach (array_keys($clean) as $role) {
+            $insert->execute([':email' => $email, ':role' => $role]);
+        }
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
     }
 }
 

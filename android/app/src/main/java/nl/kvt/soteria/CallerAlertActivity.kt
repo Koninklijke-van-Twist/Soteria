@@ -29,6 +29,7 @@ class CallerAlertActivity : AppCompatActivity() {
     private var places: List<Place> = emptyList()
     private var selectedPlaceId = 0
     private var ignoreSpinner = true
+    private var locationUpdatePending = false
     private var placesKey = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,7 +54,7 @@ class CallerAlertActivity : AppCompatActivity() {
         binding.cancelButton.setOnClickListener { confirmCancellation() }
         binding.locationPicker.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                if (ignoreSpinner) return
+                if (ignoreSpinner || locationUpdatePending) return
                 val place = places.getOrNull(position - 1) ?: return
                 if (place.id == selectedPlaceId) return
                 updateLocation(place.id)
@@ -193,12 +194,15 @@ class CallerAlertActivity : AppCompatActivity() {
         if (parsed.isEmpty()) {
             binding.locationPicker.visibility = View.GONE
             binding.locationHint.visibility = View.VISIBLE
-            placesKey = ""
-            selectedPlaceId = 0
+            if (!locationUpdatePending) {
+                placesKey = ""
+                selectedPlaceId = 0
+            }
             return
         }
         binding.locationHint.visibility = View.GONE
         binding.locationPicker.visibility = View.VISIBLE
+        binding.locationPicker.isEnabled = !locationUpdatePending
         if (key != placesKey) {
             ignoreSpinner = true
             placesKey = key
@@ -211,6 +215,9 @@ class CallerAlertActivity : AppCompatActivity() {
                 adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
         }
+        if (locationUpdatePending) {
+            return
+        }
         val index = parsed.indexOfFirst { it.id == placeId }.let { found -> if (found >= 0) found + 1 else 0 }
         if (binding.locationPicker.selectedItemPosition != index) {
             ignoreSpinner = true
@@ -221,7 +228,9 @@ class CallerAlertActivity : AppCompatActivity() {
     }
 
     private fun updateLocation(placeId: Int) {
-        ignoreSpinner = true
+        if (locationUpdatePending) return
+        locationUpdatePending = true
+        binding.locationPicker.isEnabled = false
         selectedPlaceId = placeId
         executor.execute {
             val json = runCatching {
@@ -232,7 +241,8 @@ class CallerAlertActivity : AppCompatActivity() {
             }.getOrNull()
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                ignoreSpinner = false
+                locationUpdatePending = false
+                binding.locationPicker.isEnabled = true
                 if (json?.optBoolean("ok") == true) {
                     Toast.makeText(this, R.string.location_updated, Toast.LENGTH_SHORT).show()
                     json.optJSONObject("alert")?.let { render(it) }

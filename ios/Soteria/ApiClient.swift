@@ -31,8 +31,12 @@ struct ApiClient {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         let (data, response) = try await URLSession.shared.data(for: request)
-        let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        if !(200...299).contains(code) {
+            let error = (json["error"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw ApiClientError.message(error?.isEmpty == false ? error! : "Serverantwoord \(code).")
+        }
         if json["ok"] as? Bool != true {
             let error = (json["error"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             throw ApiClientError.message(error?.isEmpty == false ? error! : "Serverantwoord \(code).")

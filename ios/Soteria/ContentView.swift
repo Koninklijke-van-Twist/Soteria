@@ -28,7 +28,10 @@ struct ContentView: View {
             .navigationTitle("Soteria")
             .toolbar {
                 if !token.isEmpty {
-                    Button("Uitloggen") { token = "" }
+                    Button("Uitloggen") {
+                        token = ""
+                        draftToken = ""
+                    }
                 }
             }
         }

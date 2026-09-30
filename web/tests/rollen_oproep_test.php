@@ -227,6 +227,14 @@ while (microtime(true) < $deadline) {
     usleep(100000);
 }
 check($up, 'API antwoordt');
+if (!is_resource($server) || !$up) {
+    if (is_resource($server)) {
+        proc_terminate($server);
+        proc_close($server);
+    }
+    fwrite(STDERR, "PHP-server op poort $port is niet gestart\n");
+    exit(1);
+}
 
 function http_json(string $url, string $token, array $payload): array
 {
