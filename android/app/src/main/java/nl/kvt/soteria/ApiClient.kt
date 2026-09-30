@@ -45,12 +45,16 @@ object ApiClient {
             if (peopleJson != null) {
                 for (j in 0 until peopleJson.length()) {
                     val person = peopleJson.getJSONObject(j)
-                    people.add(
-                        Person(
-                            email = person.optString("email"),
-                            name = person.optString("name")
-                        )
-                    )
+                    people.add(parsePerson(person))
+                }
+            }
+            val byRole = item.optJSONObject("by_role")
+            val places = mutableListOf<Place>()
+            val placesJson = item.optJSONArray("places")
+            if (placesJson != null) {
+                for (j in 0 until placesJson.length()) {
+                    val place = placesJson.getJSONObject(j)
+                    places.add(Place(id = place.optInt("id"), name = place.optString("name")))
                 }
             }
             result.add(
@@ -60,7 +64,15 @@ object ApiClient {
                     lat = item.optDouble("lat"),
                     lng = item.optDouble("lng"),
                     presentCount = item.optInt("present_count"),
-                    people = people
+                    byRole = RoleCounts(
+                        ploegleider = byRole?.optInt("ploegleider") ?: 0,
+                        bhv = byRole?.optInt("bhv") ?: 0,
+                        ehbo = byRole?.optInt("ehbo") ?: 0,
+                        ontruimer = byRole?.optInt("ontruimer") ?: 0
+                    ),
+                    roleSummary = item.optString("role_summary"),
+                    people = people,
+                    places = places
                 )
             )
         }
@@ -80,8 +92,28 @@ object ApiClient {
             destName = alert.optString("dest_name"),
             destLat = alert.optDouble("dest_lat"),
             destLng = alert.optDouble("dest_lng"),
+            subLocationName = alert.optString("sub_location_name"),
             message = alert.optString("message")
         )
+    }
+
+    private fun parsePerson(person: JSONObject): Person {
+        return Person(
+            email = person.optString("email"),
+            name = person.optString("name"),
+            roles = jsonStrings(person.optJSONArray("roles")),
+            roleLabels = jsonStrings(person.optJSONArray("role_labels"))
+        )
+    }
+
+    private fun jsonStrings(array: org.json.JSONArray?): List<String> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                val value = array.optString(index)
+                if (value.isNotBlank()) add(value)
+            }
+        }
     }
 
     fun parseActiveAcknowledgedAlerts(json: JSONObject): List<ActiveAcknowledgedAlert> {
@@ -96,7 +128,8 @@ object ApiClient {
                         type = alert.optString("type"),
                         destName = alert.optString("dest_name"),
                         destLat = alert.optDouble("dest_lat"),
-                        destLng = alert.optDouble("dest_lng")
+                        destLng = alert.optDouble("dest_lng"),
+                        subLocationName = alert.optString("sub_location_name")
                     )
                 )
             }

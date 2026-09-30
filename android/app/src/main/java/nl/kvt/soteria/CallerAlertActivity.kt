@@ -2,6 +2,8 @@ package nl.kvt.soteria
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -24,6 +26,10 @@ class CallerAlertActivity : AppCompatActivity() {
     private var pollTask: ScheduledFuture<*>? = null
     private var alertId = 0
     private var closing = false
+    private var places: List<Place> = emptyList()
+    private var selectedPlaceId = 0
+    private var ignoreSpinner = true
+    private var placesKey = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +51,16 @@ class CallerAlertActivity : AppCompatActivity() {
             }
         })
         binding.cancelButton.setOnClickListener { confirmCancellation() }
+        binding.locationPicker.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (ignoreSpinner) return
+                val place = places.getOrNull(position - 1) ?: return
+                if (place.id == selectedPlaceId) return
+                updateLocation(place.id)
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
     }
 
     override fun onStart() {
@@ -91,11 +107,16 @@ class CallerAlertActivity : AppCompatActivity() {
     private fun render(alert: JSONObject) {
         val type = alert.optString("type")
         val destination = alert.optString("dest_name")
-        binding.destination.text = if (type == "assembly") {
-            getString(R.string.calling_to_assembly, destination)
-        } else {
-            getString(R.string.calling_to_caller_location)
+        val subLocation = alert.optString("sub_location_name")
+        binding.destination.text = when (type) {
+            "caller" -> getString(R.string.calling_to_caller_location)
+            else -> if (subLocation.isBlank()) {
+                getString(R.string.calling_to_assembly, destination)
+            } else {
+                getString(R.string.calling_to_assembly_place, destination, subLocation)
+            }
         }
+        renderPlaces(alert)
 
         val recipients = alert.optJSONArray("recipients")
         var acknowledged = 0
@@ -122,7 +143,25 @@ class CallerAlertActivity : AppCompatActivity() {
                     didDeliver -> getString(R.string.status_delivered)
                     else -> getString(R.string.status_not_delivered)
                 }
-                labels += "${person.optString("name")}\n$status · $distance"
+                val roleLabels = person.optJSONArray("role_labels")
+                val roleText = if (roleLabels == null || roleLabels.length() == 0) {
+                    ""
+                } else {
+                    buildString {
+                        for (roleIndex in 0 until roleLabels.length()) {
+                            val label = roleLabels.optString(roleIndex)
+                            if (label.isBlank()) continue
+                            if (isNotEmpty()) append(", ")
+                            append(label)
+                        }
+                    }
+                }
+                val nameLine = if (roleText.isBlank()) {
+                    person.optString("name")
+                } else {
+                    "${person.optString("name")} · $roleText"
+                }
+                labels += "$nameLine\n$status · $distance"
             }
         }
         binding.summary.text = getString(
@@ -136,6 +175,80 @@ class CallerAlertActivity : AppCompatActivity() {
             android.R.layout.simple_list_item_1,
             labels
         )
+    }
+
+    private fun renderPlaces(alert: JSONObject) {
+        val parsed = mutableListOf<Place>()
+        val array = alert.optJSONArray("places")
+        if (array != null) {
+            for (index in 0 until array.length()) {
+                val place = array.getJSONObject(index)
+                val id = place.optInt("id")
+                if (id > 0) parsed += Place(id = id, name = place.optString("name"))
+            }
+        }
+        val placeId = if (alert.isNull("sub_location_id")) 0 else alert.optInt("sub_location_id")
+        val key = parsed.joinToString(",") { "${it.id}:${it.name}" }
+        places = parsed
+        if (parsed.isEmpty()) {
+            binding.locationPicker.visibility = View.GONE
+            binding.locationHint.visibility = View.VISIBLE
+            placesKey = ""
+            selectedPlaceId = 0
+            return
+        }
+        binding.locationHint.visibility = View.GONE
+        binding.locationPicker.visibility = View.VISIBLE
+        if (key != placesKey) {
+            ignoreSpinner = true
+            placesKey = key
+            val labels = listOf(getString(R.string.choose_place)) + parsed.map { it.name }
+            binding.locationPicker.adapter = ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_item,
+                labels
+            ).also { adapter ->
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+        }
+        val index = parsed.indexOfFirst { it.id == placeId }.let { found -> if (found >= 0) found + 1 else 0 }
+        if (binding.locationPicker.selectedItemPosition != index) {
+            ignoreSpinner = true
+            binding.locationPicker.setSelection(index)
+        }
+        selectedPlaceId = if (placeId > 0) placeId else 0
+        binding.locationPicker.post { ignoreSpinner = false }
+    }
+
+    private fun updateLocation(placeId: Int) {
+        ignoreSpinner = true
+        selectedPlaceId = placeId
+        executor.execute {
+            val json = runCatching {
+                ApiClient.post(
+                    "update_alert_location",
+                    mapOf("alert_id" to alertId, "sub_location_id" to placeId)
+                )
+            }.getOrNull()
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                ignoreSpinner = false
+                if (json?.optBoolean("ok") == true) {
+                    Toast.makeText(this, R.string.location_updated, Toast.LENGTH_SHORT).show()
+                    json.optJSONObject("alert")?.let { render(it) }
+                } else {
+                    selectedPlaceId = 0
+                    placesKey = ""
+                    Toast.makeText(
+                        this,
+                        json?.optString("error").orEmpty().ifBlank {
+                            getString(R.string.location_update_failed)
+                        },
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
     }
 
     private fun formatDistance(meters: Double): String {

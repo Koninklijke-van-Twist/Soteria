@@ -73,18 +73,11 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         binding.userName.text = Prefs.displayName.ifBlank { Prefs.email }
-        binding.choicePanel.visibility = View.GONE
 
-        binding.callButton.setOnClickListener {
-            if (!hasNotificationPermission()) {
-                updateReliabilityUi()
-                promptForNotifications(allowSettings = true)
-                return@setOnClickListener
-            }
-            binding.choicePanel.visibility = View.VISIBLE
-        }
-        binding.callToAssembly.setOnClickListener { createAlert("assembly") }
-        binding.callToMe.setOnClickListener { createAlert("caller") }
+        binding.callBhv.setOnClickListener { confirmCall("bhv", R.string.confirm_call_bhv) }
+        binding.callEhbo.setOnClickListener { confirmCall("ehbo", R.string.confirm_call_ehbo) }
+        binding.callPloegleider.setOnClickListener { confirmCall("ploegleider", R.string.confirm_call_ploegleider) }
+        binding.callOntruimer.setOnClickListener { confirmCall("ontruimer", R.string.confirm_call_ontruimer) }
         binding.refreshButton.setOnClickListener { refresh() }
         binding.locationList.setOnItemClickListener { _, _, position, _ ->
             when (val row = overviewRows.getOrNull(position)) {
@@ -242,9 +235,10 @@ class MainActivity : AppCompatActivity() {
     private fun updateReliabilityUi() {
         if (!::binding.isInitialized || isFinishing || isDestroyed) return
         val callsAllowed = hasNotificationPermission()
-        binding.callButton.isEnabled = callsAllowed
-        binding.callToAssembly.isEnabled = callsAllowed
-        binding.callToMe.isEnabled = callsAllowed
+        binding.callBhv.isEnabled = callsAllowed
+        binding.callEhbo.isEnabled = callsAllowed
+        binding.callPloegleider.isEnabled = callsAllowed
+        binding.callOntruimer.isEnabled = callsAllowed
         if (SoteriaService.running) {
             Prefs.serviceBlockReason = Prefs.BLOCK_NONE
             AlertNotifications.cancelStatus(this)
@@ -367,14 +361,13 @@ class MainActivity : AppCompatActivity() {
                 overviewRows = buildOverviewRows()
                 val labels = overviewRows.map { row ->
                     when (row) {
-                        is OverviewRow.Location ->
-                            "${row.value.name}: ${row.value.presentCount} BHV'er(s)"
+                        is OverviewRow.Location -> presenceLabel(row.value)
                         is OverviewRow.Alert -> alertLabel(row.value)
                     }
                 }
                 binding.locationList.adapter = ArrayAdapter(
                     this,
-                    android.R.layout.simple_list_item_1,
+                    R.layout.item_overview_row,
                     labels
                 )
             }
@@ -393,17 +386,39 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun presenceLabel(location: LocationPresence): String {
+        val counts = location.byRole
+        val summary = location.roleSummary.ifBlank {
+            getString(
+                R.string.presence_counts,
+                counts.ploegleider,
+                counts.bhv,
+                counts.ehbo,
+                counts.ontruimer
+            )
+        }
+        return "${location.name}: ${location.presentCount} aanwezig\n$summary"
+    }
+
     private fun alertLabel(alert: ActiveAcknowledgedAlert): String {
-        return if (alert.type == "assembly") {
-            getString(R.string.active_call_to_assembly, alert.destName)
-        } else {
+        return if (alert.type == "caller") {
             getString(R.string.active_call_to_person, alert.callerName)
+        } else {
+            getString(R.string.active_call_to_assembly, destinationLabel(alert.destName, alert.subLocationName))
         }
     }
 
+    private fun destinationLabel(destName: String, subLocationName: String): String {
+        return if (subLocationName.isBlank()) destName else "$destName ($subLocationName)"
+    }
+
     private fun showLocationPeople(location: LocationPresence) {
-        val names = location.people.joinToString("\n") { it.name.ifBlank { it.email } }
-            .ifBlank { getString(R.string.nobody_present) }
+        val names = location.people.joinToString("\n") { person ->
+            val role = person.roleLabels.joinToString(", ").ifBlank {
+                if (person.roles.isEmpty()) getString(R.string.role_none) else person.roles.joinToString(", ")
+            }
+            "${person.name.ifBlank { person.email }}\n$role"
+        }.ifBlank { getString(R.string.nobody_present) }
         AlertDialog.Builder(this)
             .setTitle("${location.name} (${location.presentCount})")
             .setMessage(names)
@@ -447,6 +462,20 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun confirmCall(type: String, messageRes: Int) {
+        if (!hasNotificationPermission()) {
+            updateReliabilityUi()
+            promptForNotifications(allowSettings = true)
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.confirm_call_title)
+            .setMessage(messageRes)
+            .setPositiveButton(R.string.confirm_call_send) { _, _ -> createAlert(type) }
+            .setNegativeButton(R.string.later, null)
+            .show()
+    }
+
     private fun createAlert(type: String) {
         if (!hasNotificationPermission()) {
             updateReliabilityUi()
@@ -462,9 +491,8 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     val count = json.optInt("recipient_count")
                     if (!json.optBoolean("existing")) {
-                        Toast.makeText(this, "Oproep verstuurd naar $count BHV'er(s)", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, getString(R.string.call_sent, count), Toast.LENGTH_LONG).show()
                     }
-                    binding.choicePanel.visibility = View.GONE
                     openCallerAlert(json.optInt("alert_id"))
                 }
             }

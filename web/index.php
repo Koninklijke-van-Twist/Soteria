@@ -65,8 +65,42 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
     if ($action === 'delete') {
         $id = (int) ($_POST['id'] ?? 0);
-        $statement = $pdo->prepare('DELETE FROM locations WHERE id = :id');
-        $statement->execute([':id' => $id]);
+        soteria_delete_location($pdo, $id);
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    if ($action === 'create_place') {
+        $locationId = (int) ($_POST['location_id'] ?? 0);
+        $name = trim((string) ($_POST['name'] ?? ''));
+        try {
+            $id = soteria_create_place($pdo, $locationId, $name);
+        } catch (InvalidArgumentException $exception) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => $exception->getMessage()], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        echo json_encode(['ok' => true, 'id' => $id]);
+        exit;
+    }
+
+    if ($action === 'update_place') {
+        $id = (int) ($_POST['id'] ?? 0);
+        $name = trim((string) ($_POST['name'] ?? ''));
+        try {
+            soteria_rename_place($pdo, $id, $name);
+        } catch (InvalidArgumentException $exception) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => $exception->getMessage()], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    if ($action === 'delete_place') {
+        $id = (int) ($_POST['id'] ?? 0);
+        soteria_delete_place($pdo, $id);
         echo json_encode(['ok' => true]);
         exit;
     }
@@ -94,12 +128,16 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
         header { padding: 20px 24px; background: var(--panel); box-shadow: var(--shadow); display: flex; justify-content: space-between; align-items: center; }
         h1 { margin: 0; font-size: 22px; }
         .muted { color: var(--muted); }
-        .layout { display: grid; grid-template-columns: 340px 1fr; min-height: calc(100vh - 72px); }
+        .layout { display: grid; grid-template-columns: 400px 1fr; min-height: calc(100vh - 72px); }
+        a.nav { color: var(--accent); font-weight: 700; text-decoration: none; }
         aside { padding: 20px; border-right: 1px solid #d8e0eb; background: var(--panel); }
         #map { min-height: 480px; }
         .leaflet-container { height: 100%; min-height: 480px; }
         .location { padding: 12px 0; border-bottom: 1px solid #d8e0eb; }
         .location strong { display: block; }
+        .places { margin-top: 8px; padding-left: 8px; border-left: 3px solid #d8e0eb; }
+        .place { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-top: 6px; }
+        button.small { padding: 4px 8px; font-size: 13px; }
         button, .btn { border: 0; background: var(--accent); color: #fff; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
         button.danger { background: var(--danger); }
         .hint { font-size: 14px; line-height: 1.45; }
@@ -115,11 +153,14 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
             <h1>Soteria verzamelpunten</h1>
             <div class="muted">Ingelogd als <?= htmlspecialchars($adminName, ENT_QUOTES, 'UTF-8') ?></div>
         </div>
-        <span class="muted">Aanwezig = binnen 1 km</span>
+        <div>
+            <a class="nav" href="rollen.php">Rollen toewijzen</a>
+            <div class="muted">Aanwezig = binnen 1 km</div>
+        </div>
     </header>
     <div class="layout">
         <aside>
-            <p class="hint">Klik op de kaart om een verzamelpunt te plaatsen. Sleep een pin om te verplaatsen.</p>
+            <p class="hint">Klik op de kaart om een verzamelpunt te plaatsen. Sleep een pin om te verplaatsen. Locaties onder een verzamelpunt kies je tijdens een actieve oproep.</p>
             <div class="legend">
                 <span class="responder-pin">+</span>
                 <span class="muted" id="peopleCount"></span>
@@ -128,9 +169,25 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
                 <?php foreach ($locations as $location): ?>
                     <div class="location" data-id="<?= (int) $location['id'] ?>">
                         <strong><?= htmlspecialchars((string) $location['name'], ENT_QUOTES, 'UTF-8') ?></strong>
-                        <span class="muted"><?= (int) $location['present_count'] ?> BHV aanwezig</span>
+                        <span class="muted"><?= (int) $location['present_count'] ?> aanwezig</span>
+                        <div class="muted"><?= htmlspecialchars((string) ($location['role_summary'] ?? ''), ENT_QUOTES, 'UTF-8') ?></div>
+                        <div class="places">
+                            <div class="muted">Locaties</div>
+                            <?php foreach ($location['places'] as $place): ?>
+                                <div class="place">
+                                    <span><?= htmlspecialchars((string) $place['name'], ENT_QUOTES, 'UTF-8') ?></span>
+                                    <span>
+                                        <button type="button" class="small" data-rename-place="<?= (int) $place['id'] ?>" data-place-name="<?= htmlspecialchars((string) $place['name'], ENT_QUOTES, 'UTF-8') ?>">Hernoem</button>
+                                        <button type="button" class="small danger" data-delete-place="<?= (int) $place['id'] ?>">Verwijder</button>
+                                    </span>
+                                </div>
+                            <?php endforeach; ?>
+                            <div style="margin-top:8px;">
+                                <button type="button" class="small" data-add-place="<?= (int) $location['id'] ?>">Locatie toevoegen</button>
+                            </div>
+                        </div>
                         <div style="margin-top:8px;">
-                            <button class="danger" data-delete="<?= (int) $location['id'] ?>">Verwijder</button>
+                            <button class="danger" data-delete="<?= (int) $location['id'] ?>">Verzamelpunt verwijderen</button>
                         </div>
                     </div>
                 <?php endforeach; ?>
@@ -157,8 +214,8 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
             return response.json();
         }
 
-        function promptName(current) {
-            const name = window.prompt('Naam van het verzamelpunt', current || '');
+        function promptName(current, label) {
+            const name = window.prompt(label || 'Naam van het verzamelpunt', current || '');
             return name ? name.trim() : '';
         }
 
@@ -215,13 +272,15 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
             responderLayer.clearLayers();
             people.forEach((person) => {
                 if (!Number.isFinite(person.lat) || !Number.isFinite(person.lng)) return;
+                const roles = Array.isArray(person.role_labels) ? person.role_labels.filter(Boolean).join(', ') : '';
+                const label = roles ? person.name + ' (' + roles + ')' : person.name;
                 L.marker([person.lat, person.lng], { icon: responderIcon, zIndexOffset: 500 })
-                    .bindTooltip(escapeHtml(person.name), { direction: 'top' })
+                    .bindTooltip(escapeHtml(label), { direction: 'top' })
                     .addTo(responderLayer);
             });
             peopleCount.textContent = people.length === 1
-                ? '1 BHV\'er online — hover voor de naam'
-                : people.length + ' BHV\'ers online — hover voor de naam';
+                ? '1 persoon online — hover voor naam en rol'
+                : people.length + ' personen online — hover voor naam en rol';
         }
 
         renderPeople(initialPeople);
@@ -251,8 +310,44 @@ $adminName = trim((string) ($admin['name'] ?? $admin['email'] ?? 'beheerder'));
 
         document.querySelectorAll('[data-delete]').forEach((button) => {
             button.addEventListener('click', async () => {
-                if (!confirm('Dit verzamelpunt verwijderen?')) return;
+                if (!confirm('Dit verzamelpunt en de locaties eronder verwijderen?')) return;
                 await post({ action: 'delete', id: button.getAttribute('data-delete') });
+                window.location.reload();
+            });
+        });
+
+        document.querySelectorAll('[data-add-place]').forEach((button) => {
+            button.addEventListener('click', async () => {
+                const name = promptName('', 'Naam van de locatie binnen dit verzamelpunt');
+                if (!name) return;
+                const result = await post({
+                    action: 'create_place',
+                    location_id: button.getAttribute('data-add-place'),
+                    name
+                });
+                if (result.ok) window.location.reload();
+                else window.alert(result.error || 'Locatie toevoegen mislukt.');
+            });
+        });
+
+        document.querySelectorAll('[data-rename-place]').forEach((button) => {
+            button.addEventListener('click', async () => {
+                const name = promptName(button.getAttribute('data-place-name') || '', 'Nieuwe naam van de locatie');
+                if (!name) return;
+                const result = await post({
+                    action: 'update_place',
+                    id: button.getAttribute('data-rename-place'),
+                    name
+                });
+                if (result.ok) window.location.reload();
+                else window.alert(result.error || 'Hernoemen mislukt.');
+            });
+        });
+
+        document.querySelectorAll('[data-delete-place]').forEach((button) => {
+            button.addEventListener('click', async () => {
+                if (!confirm('Deze locatie verwijderen?')) return;
+                await post({ action: 'delete_place', id: button.getAttribute('data-delete-place') });
                 window.location.reload();
             });
         });
