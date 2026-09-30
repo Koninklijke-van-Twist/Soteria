@@ -1,0 +1,247 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AAAAAAAAAAAA000000000021 /* SoteriaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAAAAAAAAAA000000000011 /* SoteriaApp.swift */; };
+		AAAAAAAAAAAA000000000022 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAAAAAAAAAA000000000012 /* ContentView.swift */; };
+		AAAAAAAAAAAA000000000023 /* ApiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAAAAAAAAAA000000000013 /* ApiClient.swift */; };
+		AAAAAAAAAAAA000000000024 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAAAAAAAAAA000000000014 /* Models.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		AAAAAAAAAAAA000000000006 /* Soteria.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Soteria.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AAAAAAAAAAAA000000000011 /* SoteriaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoteriaApp.swift; sourceTree = "<group>"; };
+		AAAAAAAAAAAA000000000012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		AAAAAAAAAAAA000000000013 /* ApiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApiClient.swift; sourceTree = "<group>"; };
+		AAAAAAAAAAAA000000000014 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		AAAAAAAAAAAA000000000015 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AAAAAAAAAAAA000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AAAAAAAAAAAA000000000007 = {
+			isa = PBXGroup;
+			children = (
+				AAAAAAAAAAAA000000000008 /* Soteria */,
+				AAAAAAAAAAAA000000000009 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AAAAAAAAAAAA000000000008 /* Soteria */ = {
+			isa = PBXGroup;
+			children = (
+				AAAAAAAAAAAA000000000011 /* SoteriaApp.swift */,
+				AAAAAAAAAAAA000000000012 /* ContentView.swift */,
+				AAAAAAAAAAAA000000000013 /* ApiClient.swift */,
+				AAAAAAAAAAAA000000000014 /* Models.swift */,
+				AAAAAAAAAAAA000000000015 /* Info.plist */,
+			);
+			path = Soteria;
+			sourceTree = "<group>";
+		};
+		AAAAAAAAAAAA000000000009 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AAAAAAAAAAAA000000000006 /* Soteria.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AAAAAAAAAAAA000000000002 /* Soteria */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AAAAAAAAAAAA00000000000B /* Build configuration list for PBXNativeTarget "Soteria" */;
+			buildPhases = (
+				AAAAAAAAAAAA000000000003 /* Sources */,
+				AAAAAAAAAAAA000000000004 /* Frameworks */,
+				AAAAAAAAAAAA000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Soteria;
+			productName = Soteria;
+			productReference = AAAAAAAAAAAA000000000006 /* Soteria.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AAAAAAAAAAAA000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1500;
+			};
+			buildConfigurationList = AAAAAAAAAAAA00000000000A /* Build configuration list for PBXProject "Soteria" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = nl;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				nl,
+				Base,
+			);
+			mainGroup = AAAAAAAAAAAA000000000007;
+			productRefGroup = AAAAAAAAAAAA000000000009 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AAAAAAAAAAAA000000000002 /* Soteria */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AAAAAAAAAAAA000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AAAAAAAAAAAA000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AAAAAAAAAAAA000000000021 /* SoteriaApp.swift in Sources */,
+				AAAAAAAAAAAA000000000022 /* ContentView.swift in Sources */,
+				AAAAAAAAAAAA000000000023 /* ApiClient.swift in Sources */,
+				AAAAAAAAAAAA000000000024 /* Models.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AAAAAAAAAAAA00000000000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AAAAAAAAAAAA00000000000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AAAAAAAAAAAA00000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Soteria/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Soteria;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Soteria gebruikt je locatie om het dichtstbijzijnde verzamelpunt te kiezen en je aanwezigheid te tonen.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = nl.kvt.soteria;
+				PRODUCT_NAME = Soteria;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AAAAAAAAAAAA00000000000F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Soteria/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Soteria;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Soteria gebruikt je locatie om het dichtstbijzijnde verzamelpunt te kiezen en je aanwezigheid te tonen.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = nl.kvt.soteria;
+				PRODUCT_NAME = Soteria;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AAAAAAAAAAAA00000000000A /* Build configuration list for PBXProject "Soteria" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAAAAAAAAAAA00000000000C /* Debug */,
+				AAAAAAAAAAAA00000000000D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AAAAAAAAAAAA00000000000B /* Build configuration list for PBXNativeTarget "Soteria" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAAAAAAAAAAA00000000000E /* Debug */,
+				AAAAAAAAAAAA00000000000F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = AAAAAAAAAAAA000000000001 /* Project object */;
+}

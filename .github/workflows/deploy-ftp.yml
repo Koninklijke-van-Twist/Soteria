@@ -1,4 +1,6 @@
-# Deploy web/ over FTP and publish a release-signed Android APK.
+# Deploy web/ over FTP, publish a release-signed Android APK, and check the iOS scaffold.
+# The iOS job does not build or upload an IPA. TestFlight still needs a macOS runner,
+# an Apple Distribution certificate, a provisioning profile and an App Store Connect API key.
 #
 # Required repo/org secrets for the android job:
 #   ANDROID_KEYSTORE_BASE64   — base64 of the .jks/.keystore file
@@ -9,7 +11,7 @@
 #   SOTERIA_API_BASE_URL      — API base URL baked into the APK
 # FTP secrets (unchanged): FTP_HOST, FTP_USERNAME, FTP_PASSWORD, FTP_REMOTE_DIR
 
-name: Deploy to FTP and release APK
+name: Deploy to FTP, release APK, check iOS scaffold
 
 on:
   push:
@@ -184,6 +186,44 @@ jobs:
         with:
           tag_name: apk-${{ github.run_number }}
           name: Soteria ${{ github.run_number }}
-          body: versionCode=${{ github.run_number }}
+          body: |
+            versionCode=${{ github.run_number }}
+            Android-APK. Er zit nog geen ondertekende iOS-build in deze release.
           files: android/app/build/outputs/apk/release/app-release.apk
           fail_on_unmatched_files: true
+
+  ios:
+    name: iOS-scaffold
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Controleer iOS-bronstructuur
+        run: |
+          set -euo pipefail
+          required=(
+            ios/Soteria.xcodeproj/project.pbxproj
+            ios/Soteria.xcodeproj/xcshareddata/xcschemes/Soteria.xcscheme
+            ios/Soteria/SoteriaApp.swift
+            ios/Soteria/ContentView.swift
+            ios/Soteria/ApiClient.swift
+            ios/Soteria/Models.swift
+            ios/Soteria/Info.plist
+          )
+          for file in "${required[@]}"; do
+            test -f "$file"
+          done
+          for file in ios/Soteria/*.swift; do
+            base="$(basename "$file")"
+            grep -q "$base" ios/Soteria.xcodeproj/project.pbxproj
+          done
+          grep -q 'nl.kvt.soteria' ios/Soteria.xcodeproj/project.pbxproj
+          echo "iOS-scaffold aanwezig (vier oproepknoppen, aanwezigheid per rol, locatiekeuze)."
+          echo "Deze job publiceert geen IPA en start geen TestFlight-upload."
+          echo "Nog nodig voor een echte iOS-release:"
+          echo "- macOS-runner met Xcode (xcodebuild -scheme Soteria)"
+          echo "- Apple Distribution-certificaat en provisioning profile"
+          echo "- App Store Connect API-key"
+          echo "- Entra-login, achtergrondlocatie en kritieke meldingen in de iOS-app"
+          echo "- CODE_SIGNING_ALLOWED weer aan, met DEVELOPMENT_TEAM"

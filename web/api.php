@@ -18,10 +18,13 @@ $displayName = (string) ($user['display_name'] ?? soteria_display_name_for_email
 soteria_expire_stale_alerts($pdo);
 
 if ($action === 'me') {
+    $roles = soteria_roles_by_email($pdo)[$email] ?? [];
     soteria_json([
         'ok' => true,
         'email' => $email,
         'name' => $displayName,
+        'roles' => $roles,
+        'role_labels' => soteria_role_label_list($roles),
         'token_ttl_seconds' => SOTERIA_TOKEN_TTL_SECONDS,
     ]);
 }
@@ -146,103 +149,27 @@ if ($action === 'cancel_alert') {
     soteria_json(['ok' => true]);
 }
 
+if ($action === 'update_alert_location') {
+    $alertId = (int) ($body['alert_id'] ?? 0);
+    $placeId = (int) ($body['sub_location_id'] ?? $body['place_id'] ?? 0);
+    $result = soteria_update_alert_sub_location($pdo, $alertId, $email, $placeId);
+    $status = (int) ($result['status'] ?? 200);
+    unset($result['status']);
+    soteria_json($result, $status);
+}
+
 if ($action === 'create_alert') {
     $type = trim((string) ($body['type'] ?? ''));
     $lat = (float) ($body['lat'] ?? 0);
     $lng = (float) ($body['lng'] ?? 0);
-
-    if (!in_array($type, ['assembly', 'caller'], true)) {
-        soteria_json(['ok' => false, 'error' => 'Kies een oproeptype.'], 400);
-    }
     if ($lat === 0.0 && $lng === 0.0) {
         $lat = (float) ($user['last_lat'] ?? 0);
         $lng = (float) ($user['last_lng'] ?? 0);
     }
-
-    $existing = soteria_active_outgoing_alert($pdo, $email);
-    if ($existing !== null) {
-        soteria_json([
-            'ok' => true,
-            'alert_id' => (int) $existing['id'],
-            'existing' => true,
-        ]);
-    }
-    if ($lat === 0.0 && $lng === 0.0) {
-        soteria_json(['ok' => false, 'error' => 'Je locatie is nodig voor een oproep.'], 400);
-    }
-
-    $locations = soteria_locations($pdo);
-    if ($locations === []) {
-        soteria_json(['ok' => false, 'error' => 'Er zijn nog geen verzamelpunten ingesteld.'], 400);
-    }
-
-    $destName = '';
-    $destLat = $lat;
-    $destLng = $lng;
-    $locationId = null;
-
-    if ($type === 'assembly') {
-        $nearest = soteria_nearest_location($pdo, $lat, $lng);
-        if ($nearest === null) {
-            soteria_json(['ok' => false, 'error' => 'Geen verzamelpunt gevonden.'], 400);
-        }
-        $destName = (string) $nearest['name'];
-        $destLat = (float) $nearest['lat'];
-        $destLng = (float) $nearest['lng'];
-        $locationId = (int) $nearest['id'];
-    } else {
-        $destName = 'locatie van ' . $displayName;
-    }
-
-    $present = soteria_present_users($pdo);
-    $recipients = [];
-    foreach ($present as $candidate) {
-        $candidateEmail = strtolower(trim((string) ($candidate['email'] ?? '')));
-        if ($candidateEmail === '' || $candidateEmail === $email) {
-            continue;
-        }
-        foreach ($locations as $location) {
-            if (soteria_user_is_present_at($candidate, $location)) {
-                $recipients[$candidateEmail] = true;
-                break;
-            }
-        }
-    }
-
-    $pdo->beginTransaction();
-    $insert = $pdo->prepare(
-        'INSERT INTO alerts (caller_email, caller_name, type, dest_name, dest_lat, dest_lng, location_id, created_at, active)
-         VALUES (:caller_email, :caller_name, :type, :dest_name, :dest_lat, :dest_lng, :location_id, :created_at, 1)'
-    );
-    $insert->execute([
-        ':caller_email' => $email,
-        ':caller_name' => $displayName,
-        ':type' => $type,
-        ':dest_name' => $destName,
-        ':dest_lat' => $destLat,
-        ':dest_lng' => $destLng,
-        ':location_id' => $locationId,
-        ':created_at' => time(),
-    ]);
-    $alertId = (int) $pdo->lastInsertId();
-
-    $recipientInsert = $pdo->prepare(
-        'INSERT OR IGNORE INTO alert_recipients (alert_id, email) VALUES (:alert_id, :email)'
-    );
-    foreach (array_keys($recipients) as $recipientEmail) {
-        $recipientInsert->execute([
-            ':alert_id' => $alertId,
-            ':email' => $recipientEmail,
-        ]);
-    }
-    $pdo->commit();
-
-    soteria_json([
-        'ok' => true,
-        'alert_id' => $alertId,
-        'recipient_count' => count($recipients),
-        'dest_name' => $destName,
-    ]);
+    $result = soteria_create_alert($pdo, $email, $displayName, $type, $lat, $lng);
+    $status = (int) ($result['status'] ?? 200);
+    unset($result['status']);
+    soteria_json($result, $status);
 }
 
 soteria_json(['ok' => false, 'error' => 'Onbekende actie.'], 400);
