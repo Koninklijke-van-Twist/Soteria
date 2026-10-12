@@ -21,6 +21,9 @@ object LocationFix {
     /** Interval voor de aanwezigheidsmeting. Aanwezigheid hoeft niet vaker dan eens per kwartier. */
     const val PRESENCE_INTERVAL_MS: Long = 15 * 60 * 1000L
 
+    /** Na een mislukte meting (geen fix) eerder opnieuw proberen. */
+    const val RETRY_INTERVAL_MS: Long = 60 * 1000L
+
     /** Een fix die nog niet ouder is dan dit mag opnieuw worden gebruikt. */
     private const val PRESENCE_MAX_AGE_MS: Long = 5 * 60 * 1000L
     private const val PRESENCE_TIMEOUT_MS: Long = 30_000L

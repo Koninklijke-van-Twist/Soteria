@@ -62,9 +62,7 @@ class SoteriaService : Service() {
         AlertNotifications.cancelStatus(this)
         Watchdog.schedule(this)
         // Geen continue tracking: één energiezuinige meting per interval (default 15 min).
-        locationTask = locationExecutor.scheduleWithFixedDelay(
-            { refreshLocation() }, 0, LocationFix.PRESENCE_INTERVAL_MS, TimeUnit.MILLISECONDS
-        )
+        scheduleLocation(0)
         pollTask = executor.scheduleWithFixedDelay({ tick() }, 0, 5, TimeUnit.SECONDS)
     }
 
@@ -106,10 +104,21 @@ class SoteriaService : Service() {
         super.onDestroy()
     }
 
+    private fun scheduleLocation(delayMs: Long) {
+        if (locationExecutor.isShutdown) return
+        locationTask = runCatching {
+            locationExecutor.schedule({ refreshLocation() }, delayMs, TimeUnit.MILLISECONDS)
+        }.getOrNull()
+    }
+
     private fun refreshLocation() {
-        val location = runCatching { LocationFix.presence(this) }.getOrNull() ?: return
-        lastLat = location.latitude
-        lastLng = location.longitude
+        val location = runCatching { LocationFix.presence(this) }.getOrNull()
+        if (location != null) {
+            lastLat = location.latitude
+            lastLng = location.longitude
+        }
+        // Mislukte meting: sneller opnieuw proberen, anders blijft de laatste fix staan tot het volgende kwartier.
+        scheduleLocation(if (location != null) LocationFix.PRESENCE_INTERVAL_MS else LocationFix.RETRY_INTERVAL_MS)
     }
 
     private fun tick() {
