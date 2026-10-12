@@ -483,7 +483,14 @@ class MainActivity : AppCompatActivity() {
             return
         }
         io.execute {
-            val json = runCatching { ApiClient.post("create_alert", mapOf("type" to type)) }.getOrNull()
+            // Noodoproep: precieze fix op verzoek; zonder fix valt de server terug op de laatste meting.
+            val fix = runCatching { LocationFix.precise(this) }.getOrNull()
+            val body = mutableMapOf<String, Any?>("type" to type)
+            if (fix != null) {
+                body["lat"] = fix.latitude
+                body["lng"] = fix.longitude
+            }
+            val json = runCatching { ApiClient.post("create_alert", body) }.getOrNull()
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 if (json == null || json.optBoolean("ok") != true) {

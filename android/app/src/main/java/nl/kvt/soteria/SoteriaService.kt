@@ -7,37 +7,25 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import android.os.Looper
 import androidx.core.app.ActivityCompat
 import androidx.core.app.ServiceCompat
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 class SoteriaService : Service() {
     private val executor = Executors.newSingleThreadScheduledExecutor()
+    private val locationExecutor = Executors.newSingleThreadScheduledExecutor()
     private var pollTask: ScheduledFuture<*>? = null
-    private var lastLat = 0.0
-    private var lastLng = 0.0
+    private var locationTask: ScheduledFuture<*>? = null
+    @Volatile private var lastLat = 0.0
+    @Volatile private var lastLng = 0.0
     private var ringingAlertId: Int? = null
 
     companion object {
         @Volatile
         var running: Boolean = false
             private set
-    }
-
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
-            val location = result.lastLocation ?: return
-            lastLat = location.latitude
-            lastLng = location.longitude
-        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -73,7 +61,10 @@ class SoteriaService : Service() {
         running = true
         AlertNotifications.cancelStatus(this)
         Watchdog.schedule(this)
-        startLocationUpdates()
+        // Geen continue tracking: één energiezuinige meting per interval (default 15 min).
+        locationTask = locationExecutor.scheduleWithFixedDelay(
+            { refreshLocation() }, 0, LocationFix.PRESENCE_INTERVAL_MS, TimeUnit.MILLISECONDS
+        )
         pollTask = executor.scheduleWithFixedDelay({ tick() }, 0, 5, TimeUnit.SECONDS)
     }
 
@@ -107,26 +98,18 @@ class SoteriaService : Service() {
     override fun onDestroy() {
         running = false
         pollTask?.cancel(true)
-        LocationServices.getFusedLocationProviderClient(this).removeLocationUpdates(locationCallback)
+        locationTask?.cancel(true)
+        locationExecutor.shutdownNow()
         executor.shutdownNow()
         Ringer.stop(this)
         Ringer.stopVibration(this)
         super.onDestroy()
     }
 
-    private fun startLocationUpdates() {
-        val fine = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
-            PackageManager.PERMISSION_GRANTED
-        val coarse = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
-            PackageManager.PERMISSION_GRANTED
-        if (!fine && !coarse) {
-            return
-        }
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 15_000L)
-            .setMinUpdateIntervalMillis(10_000L)
-            .build()
-        LocationServices.getFusedLocationProviderClient(this)
-            .requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+    private fun refreshLocation() {
+        val location = runCatching { LocationFix.presence(this) }.getOrNull() ?: return
+        lastLat = location.latitude
+        lastLng = location.longitude
     }
 
     private fun tick() {
