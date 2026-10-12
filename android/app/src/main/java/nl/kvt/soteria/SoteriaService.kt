@@ -20,6 +20,7 @@ class SoteriaService : Service() {
     private var locationTask: ScheduledFuture<*>? = null
     @Volatile private var lastLat = 0.0
     @Volatile private var lastLng = 0.0
+    private var failedFixes = 0
     private var ringingAlertId: Int? = null
 
     companion object {
@@ -113,12 +114,36 @@ class SoteriaService : Service() {
 
     private fun refreshLocation() {
         val location = runCatching { LocationFix.presence(this) }.getOrNull()
+        if (location == null && lastLat == 0.0 && lastLng == 0.0) {
+            // Nog geen enkele fix: systeemlocatie als tijdelijke fallback; wel snel opnieuw meten.
+            runCatching { LocationFix.lastKnown(this) }.getOrNull()?.let {
+                lastLat = it.latitude
+                lastLng = it.longitude
+            }
+        }
         if (location != null) {
             lastLat = location.latitude
             lastLng = location.longitude
+            failedFixes = 0
+            scheduleLocation(LocationFix.PRESENCE_INTERVAL_MS)
+        } else {
+            // Mislukte meting: backoff 30 s, 60 s, 2 min, ... tot het normale interval.
+            val delay = minOf(LocationFix.RETRY_INTERVAL_MS shl minOf(failedFixes, 10), LocationFix.PRESENCE_INTERVAL_MS)
+            failedFixes++
+            scheduleLocation(delay)
         }
-        // Mislukte meting: sneller opnieuw proberen, anders blijft de laatste fix staan tot het volgende kwartier.
-        scheduleLocation(if (location != null) LocationFix.PRESENCE_INTERVAL_MS else LocationFix.RETRY_INTERVAL_MS)
+    }
+
+    /** Laatst bekende geldige locatie; nooit 0.0/0.0 meesturen. */
+    private fun locationPayload(): MutableMap<String, Any?> {
+        val payload = mutableMapOf<String, Any?>()
+        val lat = lastLat
+        val lng = lastLng
+        if (lat != 0.0 || lng != 0.0) {
+            payload["lat"] = lat
+            payload["lng"] = lng
+        }
+        return payload
     }
 
     private fun tick() {
@@ -143,11 +168,8 @@ class SoteriaService : Service() {
             if (acknowledgedAlertId > 0) {
                 ApiClient.post("ack_alert", mapOf("alert_id" to acknowledgedAlertId))
             }
-            val payload = mutableMapOf<String, Any?>(
-                "lat" to lastLat,
-                "lng" to lastLng,
-                "current_alert_id" to Prefs.currentRespondingAlertId
-            )
+            val payload = locationPayload()
+            payload["current_alert_id"] = Prefs.currentRespondingAlertId
             val deliveredAlertId = Prefs.deliveredAlertId
             if (deliveredAlertId > 0) {
                 payload["delivered_alert_id"] = deliveredAlertId
@@ -190,12 +212,10 @@ class SoteriaService : Service() {
                 if (firstDelivery) {
                     ApiClient.post(
                         "heartbeat",
-                        mapOf(
-                            "lat" to lastLat,
-                            "lng" to lastLng,
-                            "current_alert_id" to Prefs.currentRespondingAlertId,
-                            "delivered_alert_id" to alert.id
-                        )
+                        locationPayload().apply {
+                            put("current_alert_id", Prefs.currentRespondingAlertId)
+                            put("delivered_alert_id", alert.id)
+                        }
                     )
                 }
             }

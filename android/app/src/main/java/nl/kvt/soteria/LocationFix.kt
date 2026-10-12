@@ -21,8 +21,8 @@ object LocationFix {
     /** Interval voor de aanwezigheidsmeting. Aanwezigheid hoeft niet vaker dan eens per kwartier. */
     const val PRESENCE_INTERVAL_MS: Long = 15 * 60 * 1000L
 
-    /** Na een mislukte meting (geen fix) eerder opnieuw proberen. */
-    const val RETRY_INTERVAL_MS: Long = 60 * 1000L
+    /** Na een mislukte meting (geen fix) opnieuw proberen met backoff vanaf dit interval. */
+    const val RETRY_INTERVAL_MS: Long = 30 * 1000L
 
     /** Een fix die nog niet ouder is dan dit mag opnieuw worden gebruikt. */
     private const val PRESENCE_MAX_AGE_MS: Long = 5 * 60 * 1000L
@@ -37,6 +37,20 @@ object LocationFix {
     /** Precieze meting op verzoek, bijvoorbeeld bij het starten van een noodoproep. */
     fun precise(context: Context): Location? =
         fix(context, Priority.PRIORITY_HIGH_ACCURACY, PRECISE_MAX_AGE_MS, PRECISE_TIMEOUT_MS)
+
+    /** Laatst bekende locatie van het systeem (geen nieuwe meting), als fallback. */
+    fun lastKnown(context: Context): Location? {
+        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!fine && !coarse) return null
+        return try {
+            Tasks.await(LocationServices.getFusedLocationProviderClient(context).lastLocation, 5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     private fun fix(context: Context, priority: Int, maxAgeMs: Long, timeoutMs: Long): Location? {
         val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
