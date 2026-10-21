@@ -7,6 +7,7 @@ web/data/*.sqlite-*
 web/data/.ht-*
 web/analytics/analytics.sqlite
 web/analytics/analytics.sqlite-*
+web/analytics/.htaccess
 
 android/local.properties
 android/.gradle/
